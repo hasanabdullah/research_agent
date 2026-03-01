@@ -1,0 +1,36 @@
+# OpenRouter model name
+model: anthropic/claude-opus-4.6
+
+# research = auto-approve research files, refuse code edits
+# full = human approves everything (code + research)
+mode: research
+
+budget:
+  max_per_day_usd: 10.00
+  max_total_usd: 10.00
+
+# Cost per 1M tokens (Opus 4.6 via OpenRouter)
+pricing:
+  input_per_mtok: 5.00
+  output_per_mtok: 25.00
+
+protected_files:
+  - CONSTITUTION.md
+  - MISSION.md
+  - .env
+  - .gitignore
+  - config.yaml
+
+# Code files — only modifiable in 'full' mode
+modifiable_files:
+  - agent.py
+  - tools.py
+  - supervisor.py
+  - costs.py
+  - tests/test_agent.py
+  - data/identity.json
+
+# Agent can create/edit any .md file under this directory
+research_dir: data/research
+
+active_topic: AI transformation ideas

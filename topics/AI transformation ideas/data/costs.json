@@ -1,0 +1,14 @@
+{
+  "calls": [
+    {
+      "timestamp": "2026-02-28T20:35:20.084274+00:00",
+      "label": "scaffold_generation",
+      "input_tokens": 577,
+      "output_tokens": 1934,
+      "usd": 0.051235
+    }
+  ],
+  "total_input_tokens": 577,
+  "total_output_tokens": 1934,
+  "total_usd": 0.051235
+}

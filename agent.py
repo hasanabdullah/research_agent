@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 from costs import check_budget, get_summary, record_call
 from supervisor import review_proposal
-from tools import TOOL_DEFINITIONS, dispatch_tool, reset_web_counters, set_paths
+from tools import TOOL_DEFINITIONS, dispatch_tool, reset_web_counters, set_paths, _resolve_file_path
 
 load_dotenv()
 
@@ -524,7 +524,7 @@ def run_cycle(config: dict) -> dict:
     summary = ""
     patch_file = None
 
-    for turn in range(5):  # max 5 tool-use turns per cycle
+    for turn in range(10):  # max 10 tool-use turns per cycle
         response = client.chat.completions.create(
             model=config.get("model", "anthropic/claude-opus-4.6"),
             max_tokens=4096,
@@ -595,6 +595,13 @@ def run_cycle(config: dict) -> dict:
                     action = "reflect"
                     summary = args.get("observation", "")[:200]
 
+        # Nudge agent to write if it hasn't by turn 7
+        if turn == 7 and action == "reflect":
+            messages.append({
+                "role": "user",
+                "content": "IMPORTANT: You have used most of your turns without writing any output. You MUST call append_to_file or propose_edit NOW to write your findings to a research file. Do not search or reflect further — write what you have.",
+            })
+
         # If no tool calls, we're done
         finish = response.choices[0].finish_reason
         if finish == "stop" or not has_tool_calls:
@@ -651,13 +658,13 @@ def run_cycle(config: dict) -> dict:
             )
 
         if choice == "a":
-            target = ROOT / patch_data["path"]
+            target = _resolve_file_path(patch_data["path"])
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(patch_data["new_content"])
-            click.echo(f"Applied: {patch_data['path']}")
+            click.echo(f"Applied: {target}")
 
             # Git commit
-            git_run("add", patch_data["path"])
+            git_run("add", str(target.relative_to(ROOT)))
             git_run("commit", "-m", f"deepshika cycle {cycle_num}: {patch_data['reasoning'][:60]}")
             click.echo(f"Committed.")
             action = "applied"

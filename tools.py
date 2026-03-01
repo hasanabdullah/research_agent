@@ -31,6 +31,15 @@ def set_paths(data_dir: Path, patches_dir: Path, research_dir: Path = None):
         _paths["research_dir"] = research_dir
 
 
+def _resolve_file_path(path: str) -> Path:
+    """Resolve a relative path, remapping data/research/ to the active topic's research dir."""
+    # If the path targets research files, use the topic-specific research dir
+    if path.startswith("data/research/"):
+        filename = path[len("data/research/"):]
+        return _paths["research_dir"] / filename
+    return ROOT / path
+
+
 def _load_config() -> dict:
     cfg_path = ROOT / "config.yaml"
     if cfg_path.exists():
@@ -209,7 +218,7 @@ TOOL_DEFINITIONS = [
 
 def handle_read_file(path: str) -> str:
     """Read a project file. Returns contents or error message."""
-    target = (ROOT / path).resolve()
+    target = _resolve_file_path(path).resolve()
     # Security: ensure the path stays within the project
     if not str(target).startswith(str(ROOT.resolve())):
         return "ERROR: Path escapes project directory."
@@ -245,7 +254,7 @@ def handle_propose_edit(path: str, new_content: str, reasoning: str) -> str:
     if path not in modifiable and not is_research:
         return f"REFUSED: '{path}' is not in the modifiable files list."
 
-    target = (ROOT / path).resolve()
+    target = _resolve_file_path(path).resolve()
     if not str(target).startswith(str(ROOT.resolve())):
         return "REFUSED: Path escapes project directory."
 
@@ -303,7 +312,7 @@ def handle_append_to_file(path: str, content: str, reasoning: str) -> str:
     config = _load_config()
     research_dir = config.get("research_dir", "data/research")
 
-    target = (ROOT / path).resolve()
+    target = _resolve_file_path(path).resolve()
     if not str(target).startswith(str(ROOT.resolve())):
         return "REFUSED: Path escapes project directory."
 

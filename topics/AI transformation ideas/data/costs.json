@@ -6,9 +6,870 @@
       "input_tokens": 577,
       "output_tokens": 1934,
       "usd": 0.051235
+    },
+    {
+      "timestamp": "2026-03-01T02:29:02.873773+00:00",
+      "label": "cycle_1_turn_0",
+      "input_tokens": 3406,
+      "output_tokens": 177,
+      "usd": 0.021455
+    },
+    {
+      "timestamp": "2026-03-01T02:29:06.945452+00:00",
+      "label": "cycle_1_turn_1",
+      "input_tokens": 3718,
+      "output_tokens": 250,
+      "usd": 0.02484
+    },
+    {
+      "timestamp": "2026-03-01T02:29:36.878126+00:00",
+      "label": "cycle_1_turn_2",
+      "input_tokens": 11077,
+      "output_tokens": 274,
+      "usd": 0.062235
+    },
+    {
+      "timestamp": "2026-03-01T02:31:03.250314+00:00",
+      "label": "cycle_1_turn_3",
+      "input_tokens": 20112,
+      "output_tokens": 3232,
+      "usd": 0.18136
+    },
+    {
+      "timestamp": "2026-03-01T02:31:24.617815+00:00",
+      "label": "cycle_1_turn_4",
+      "input_tokens": 23472,
+      "output_tokens": 1026,
+      "usd": 0.14301
+    },
+    {
+      "timestamp": "2026-03-01T02:31:29.143736+00:00",
+      "label": "supervisor",
+      "input_tokens": 3713,
+      "output_tokens": 85,
+      "usd": 0.02069
+    },
+    {
+      "timestamp": "2026-03-01T02:31:35.817986+00:00",
+      "label": "supervisor",
+      "input_tokens": 1326,
+      "output_tokens": 98,
+      "usd": 0.00908
+    },
+    {
+      "timestamp": "2026-03-01T02:31:49.605586+00:00",
+      "label": "cycle_2_turn_0",
+      "input_tokens": 3487,
+      "output_tokens": 133,
+      "usd": 0.02076
+    },
+    {
+      "timestamp": "2026-03-01T02:31:55.012868+00:00",
+      "label": "cycle_2_turn_1",
+      "input_tokens": 7602,
+      "output_tokens": 269,
+      "usd": 0.044735
+    },
+    {
+      "timestamp": "2026-03-01T02:32:22.123256+00:00",
+      "label": "cycle_2_turn_2",
+      "input_tokens": 10354,
+      "output_tokens": 195,
+      "usd": 0.056645
+    },
+    {
+      "timestamp": "2026-03-01T02:32:27.519639+00:00",
+      "label": "cycle_2_turn_3",
+      "input_tokens": 13099,
+      "output_tokens": 117,
+      "usd": 0.06842
+    },
+    {
+      "timestamp": "2026-03-01T02:33:24.291613+00:00",
+      "label": "cycle_2_turn_4",
+      "input_tokens": 15766,
+      "output_tokens": 2340,
+      "usd": 0.13733
+    },
+    {
+      "timestamp": "2026-03-01T02:33:27.481456+00:00",
+      "label": "supervisor",
+      "input_tokens": 2734,
+      "output_tokens": 64,
+      "usd": 0.01527
+    },
+    {
+      "timestamp": "2026-03-01T02:33:41.738152+00:00",
+      "label": "cycle_3_turn_0",
+      "input_tokens": 3557,
+      "output_tokens": 184,
+      "usd": 0.022385
+    },
+    {
+      "timestamp": "2026-03-01T02:33:47.071972+00:00",
+      "label": "cycle_3_turn_1",
+      "input_tokens": 9902,
+      "output_tokens": 266,
+      "usd": 0.05616
+    },
+    {
+      "timestamp": "2026-03-01T02:34:15.627308+00:00",
+      "label": "cycle_3_turn_2",
+      "input_tokens": 12837,
+      "output_tokens": 323,
+      "usd": 0.07226
+    },
+    {
+      "timestamp": "2026-03-01T02:34:25.105115+00:00",
+      "label": "cycle_3_turn_3",
+      "input_tokens": 14335,
+      "output_tokens": 238,
+      "usd": 0.077625
+    },
+    {
+      "timestamp": "2026-03-01T02:34:47.991794+00:00",
+      "label": "cycle_3_turn_4",
+      "input_tokens": 14676,
+      "output_tokens": 866,
+      "usd": 0.09503
+    },
+    {
+      "timestamp": "2026-03-01T02:34:51.979832+00:00",
+      "label": "supervisor",
+      "input_tokens": 1176,
+      "output_tokens": 82,
+      "usd": 0.00793
+    },
+    {
+      "timestamp": "2026-03-01T02:35:06.534361+00:00",
+      "label": "cycle_4_turn_0",
+      "input_tokens": 3618,
+      "output_tokens": 188,
+      "usd": 0.02279
+    },
+    {
+      "timestamp": "2026-03-01T02:35:12.041510+00:00",
+      "label": "cycle_4_turn_1",
+      "input_tokens": 10661,
+      "output_tokens": 282,
+      "usd": 0.060355
+    },
+    {
+      "timestamp": "2026-03-01T02:35:27.895381+00:00",
+      "label": "cycle_4_turn_2",
+      "input_tokens": 18570,
+      "output_tokens": 319,
+      "usd": 0.100825
+    },
+    {
+      "timestamp": "2026-03-01T02:35:37.331678+00:00",
+      "label": "cycle_4_turn_3",
+      "input_tokens": 26068,
+      "output_tokens": 184,
+      "usd": 0.13494
+    },
+    {
+      "timestamp": "2026-03-01T02:37:11.732298+00:00",
+      "label": "cycle_4_turn_4",
+      "input_tokens": 26355,
+      "output_tokens": 4096,
+      "usd": 0.234175
+    },
+    {
+      "timestamp": "2026-03-01T02:37:25.262149+00:00",
+      "label": "cycle_5_turn_0",
+      "input_tokens": 3590,
+      "output_tokens": 183,
+      "usd": 0.022525
+    },
+    {
+      "timestamp": "2026-03-01T02:37:31.903997+00:00",
+      "label": "cycle_5_turn_1",
+      "input_tokens": 10628,
+      "output_tokens": 260,
+      "usd": 0.05964
+    },
+    {
+      "timestamp": "2026-03-01T02:37:57.446047+00:00",
+      "label": "cycle_5_turn_2",
+      "input_tokens": 13490,
+      "output_tokens": 212,
+      "usd": 0.07275
+    },
+    {
+      "timestamp": "2026-03-01T02:38:04.156932+00:00",
+      "label": "cycle_5_turn_3",
+      "input_tokens": 20847,
+      "output_tokens": 112,
+      "usd": 0.107035
+    },
+    {
+      "timestamp": "2026-03-01T02:39:24.583913+00:00",
+      "label": "cycle_5_turn_4",
+      "input_tokens": 20991,
+      "output_tokens": 4096,
+      "usd": 0.207355
+    },
+    {
+      "timestamp": "2026-03-01T02:39:38.101416+00:00",
+      "label": "cycle_6_turn_0",
+      "input_tokens": 3557,
+      "output_tokens": 186,
+      "usd": 0.022435
+    },
+    {
+      "timestamp": "2026-03-01T02:39:42.885309+00:00",
+      "label": "cycle_6_turn_1",
+      "input_tokens": 10598,
+      "output_tokens": 209,
+      "usd": 0.058215
+    },
+    {
+      "timestamp": "2026-03-01T02:39:54.136974+00:00",
+      "label": "cycle_6_turn_2",
+      "input_tokens": 12584,
+      "output_tokens": 193,
+      "usd": 0.067745
+    },
+    {
+      "timestamp": "2026-03-01T02:40:01.894229+00:00",
+      "label": "cycle_6_turn_3",
+      "input_tokens": 13801,
+      "output_tokens": 193,
+      "usd": 0.07383
+    },
+    {
+      "timestamp": "2026-03-01T02:40:09.499481+00:00",
+      "label": "cycle_6_turn_4",
+      "input_tokens": 16703,
+      "output_tokens": 118,
+      "usd": 0.086465
+    },
+    {
+      "timestamp": "2026-03-01T02:40:23.651920+00:00",
+      "label": "cycle_7_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 179,
+      "usd": 0.02212
+    },
+    {
+      "timestamp": "2026-03-01T02:40:29.909486+00:00",
+      "label": "cycle_7_turn_1",
+      "input_tokens": 10563,
+      "output_tokens": 307,
+      "usd": 0.06049
+    },
+    {
+      "timestamp": "2026-03-01T02:40:45.833023+00:00",
+      "label": "cycle_7_turn_2",
+      "input_tokens": 13342,
+      "output_tokens": 175,
+      "usd": 0.071085
+    },
+    {
+      "timestamp": "2026-03-01T02:40:51.980134+00:00",
+      "label": "cycle_7_turn_3",
+      "input_tokens": 16279,
+      "output_tokens": 118,
+      "usd": 0.084345
+    },
+    {
+      "timestamp": "2026-03-01T02:42:17.038109+00:00",
+      "label": "cycle_7_turn_4",
+      "input_tokens": 19044,
+      "output_tokens": 4096,
+      "usd": 0.19762
+    },
+    {
+      "timestamp": "2026-03-01T02:42:30.200360+00:00",
+      "label": "cycle_8_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 179,
+      "usd": 0.02212
+    },
+    {
+      "timestamp": "2026-03-01T02:42:35.144273+00:00",
+      "label": "cycle_8_turn_1",
+      "input_tokens": 10563,
+      "output_tokens": 205,
+      "usd": 0.05794
+    },
+    {
+      "timestamp": "2026-03-01T02:42:45.431334+00:00",
+      "label": "cycle_8_turn_2",
+      "input_tokens": 12798,
+      "output_tokens": 181,
+      "usd": 0.068515
+    },
+    {
+      "timestamp": "2026-03-01T02:42:52.920997+00:00",
+      "label": "cycle_8_turn_3",
+      "input_tokens": 18845,
+      "output_tokens": 109,
+      "usd": 0.09695
+    },
+    {
+      "timestamp": "2026-03-01T02:42:59.128827+00:00",
+      "label": "cycle_8_turn_4",
+      "input_tokens": 19588,
+      "output_tokens": 100,
+      "usd": 0.10044
+    },
+    {
+      "timestamp": "2026-03-01T02:43:15.210782+00:00",
+      "label": "cycle_9_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 184,
+      "usd": 0.022245
+    },
+    {
+      "timestamp": "2026-03-01T02:43:22.311358+00:00",
+      "label": "cycle_9_turn_1",
+      "input_tokens": 10568,
+      "output_tokens": 315,
+      "usd": 0.060715
+    },
+    {
+      "timestamp": "2026-03-01T02:43:35.863501+00:00",
+      "label": "cycle_9_turn_2",
+      "input_tokens": 12910,
+      "output_tokens": 175,
+      "usd": 0.068925
+    },
+    {
+      "timestamp": "2026-03-01T02:43:42.423449+00:00",
+      "label": "cycle_9_turn_3",
+      "input_tokens": 17434,
+      "output_tokens": 114,
+      "usd": 0.09002
+    },
+    {
+      "timestamp": "2026-03-01T02:45:13.251876+00:00",
+      "label": "cycle_9_turn_4",
+      "input_tokens": 17580,
+      "output_tokens": 4096,
+      "usd": 0.1903
+    },
+    {
+      "timestamp": "2026-03-01T02:45:26.610282+00:00",
+      "label": "cycle_10_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 178,
+      "usd": 0.022095
+    },
+    {
+      "timestamp": "2026-03-01T02:45:34.000135+00:00",
+      "label": "cycle_10_turn_1",
+      "input_tokens": 10562,
+      "output_tokens": 306,
+      "usd": 0.06046
+    },
+    {
+      "timestamp": "2026-03-01T02:45:52.901130+00:00",
+      "label": "cycle_10_turn_2",
+      "input_tokens": 13658,
+      "output_tokens": 302,
+      "usd": 0.07584
+    },
+    {
+      "timestamp": "2026-03-01T02:47:23.385776+00:00",
+      "label": "cycle_10_turn_3",
+      "input_tokens": 16974,
+      "output_tokens": 4096,
+      "usd": 0.18727
+    },
+    {
+      "timestamp": "2026-03-01T02:48:54.173784+00:00",
+      "label": "cycle_10_turn_4",
+      "input_tokens": 17177,
+      "output_tokens": 4095,
+      "usd": 0.18826
+    },
+    {
+      "timestamp": "2026-03-01T02:49:07.925366+00:00",
+      "label": "cycle_11_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 179,
+      "usd": 0.02212
+    },
+    {
+      "timestamp": "2026-03-01T02:49:13.299176+00:00",
+      "label": "cycle_11_turn_1",
+      "input_tokens": 10563,
+      "output_tokens": 254,
+      "usd": 0.059165
+    },
+    {
+      "timestamp": "2026-03-01T02:49:26.586382+00:00",
+      "label": "cycle_11_turn_2",
+      "input_tokens": 14021,
+      "output_tokens": 199,
+      "usd": 0.07508
+    },
+    {
+      "timestamp": "2026-03-01T02:49:33.913325+00:00",
+      "label": "cycle_11_turn_3",
+      "input_tokens": 19711,
+      "output_tokens": 114,
+      "usd": 0.101405
+    },
+    {
+      "timestamp": "2026-03-01T02:49:39.536563+00:00",
+      "label": "cycle_11_turn_4",
+      "input_tokens": 20512,
+      "output_tokens": 98,
+      "usd": 0.10501
+    },
+    {
+      "timestamp": "2026-03-01T02:49:55.084330+00:00",
+      "label": "cycle_12_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 179,
+      "usd": 0.02212
+    },
+    {
+      "timestamp": "2026-03-01T02:49:59.751970+00:00",
+      "label": "cycle_12_turn_1",
+      "input_tokens": 10563,
+      "output_tokens": 204,
+      "usd": 0.057915
+    },
+    {
+      "timestamp": "2026-03-01T02:50:11.578420+00:00",
+      "label": "cycle_12_turn_2",
+      "input_tokens": 12238,
+      "output_tokens": 201,
+      "usd": 0.066215
+    },
+    {
+      "timestamp": "2026-03-01T02:50:19.032058+00:00",
+      "label": "cycle_12_turn_3",
+      "input_tokens": 18138,
+      "output_tokens": 119,
+      "usd": 0.093665
+    },
+    {
+      "timestamp": "2026-03-01T02:50:24.837205+00:00",
+      "label": "cycle_12_turn_4",
+      "input_tokens": 18953,
+      "output_tokens": 121,
+      "usd": 0.09779
+    },
+    {
+      "timestamp": "2026-03-01T02:50:39.128836+00:00",
+      "label": "cycle_13_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 180,
+      "usd": 0.022145
+    },
+    {
+      "timestamp": "2026-03-01T02:50:43.478740+00:00",
+      "label": "cycle_13_turn_1",
+      "input_tokens": 10564,
+      "output_tokens": 216,
+      "usd": 0.05822
+    },
+    {
+      "timestamp": "2026-03-01T02:50:53.586859+00:00",
+      "label": "cycle_13_turn_2",
+      "input_tokens": 12535,
+      "output_tokens": 183,
+      "usd": 0.06725
+    },
+    {
+      "timestamp": "2026-03-01T02:51:02.138772+00:00",
+      "label": "cycle_13_turn_3",
+      "input_tokens": 16541,
+      "output_tokens": 105,
+      "usd": 0.08533
+    },
+    {
+      "timestamp": "2026-03-01T02:51:08.902057+00:00",
+      "label": "cycle_13_turn_4",
+      "input_tokens": 17574,
+      "output_tokens": 232,
+      "usd": 0.09367
+    },
+    {
+      "timestamp": "2026-03-01T02:51:23.488299+00:00",
+      "label": "cycle_14_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 177,
+      "usd": 0.02207
+    },
+    {
+      "timestamp": "2026-03-01T02:51:28.688274+00:00",
+      "label": "cycle_14_turn_1",
+      "input_tokens": 10561,
+      "output_tokens": 235,
+      "usd": 0.05868
+    },
+    {
+      "timestamp": "2026-03-01T02:51:41.749354+00:00",
+      "label": "cycle_14_turn_2",
+      "input_tokens": 17434,
+      "output_tokens": 212,
+      "usd": 0.09247
+    },
+    {
+      "timestamp": "2026-03-01T02:51:50.148341+00:00",
+      "label": "cycle_14_turn_3",
+      "input_tokens": 22566,
+      "output_tokens": 117,
+      "usd": 0.115755
+    },
+    {
+      "timestamp": "2026-03-01T02:51:55.873733+00:00",
+      "label": "cycle_14_turn_4",
+      "input_tokens": 23317,
+      "output_tokens": 90,
+      "usd": 0.118835
+    },
+    {
+      "timestamp": "2026-03-01T02:52:10.724731+00:00",
+      "label": "cycle_15_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 179,
+      "usd": 0.02212
+    },
+    {
+      "timestamp": "2026-03-01T02:52:15.475575+00:00",
+      "label": "cycle_15_turn_1",
+      "input_tokens": 10563,
+      "output_tokens": 206,
+      "usd": 0.057965
+    },
+    {
+      "timestamp": "2026-03-01T02:52:26.774503+00:00",
+      "label": "cycle_15_turn_2",
+      "input_tokens": 13214,
+      "output_tokens": 148,
+      "usd": 0.06977
+    },
+    {
+      "timestamp": "2026-03-01T02:52:31.165834+00:00",
+      "label": "cycle_15_turn_3",
+      "input_tokens": 14630,
+      "output_tokens": 130,
+      "usd": 0.0764
+    },
+    {
+      "timestamp": "2026-03-01T02:54:08.928119+00:00",
+      "label": "cycle_15_turn_4",
+      "input_tokens": 16304,
+      "output_tokens": 4096,
+      "usd": 0.18392
+    },
+    {
+      "timestamp": "2026-03-01T02:54:23.112059+00:00",
+      "label": "cycle_16_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 185,
+      "usd": 0.02227
+    },
+    {
+      "timestamp": "2026-03-01T02:54:29.694479+00:00",
+      "label": "cycle_16_turn_1",
+      "input_tokens": 10569,
+      "output_tokens": 263,
+      "usd": 0.05942
+    },
+    {
+      "timestamp": "2026-03-01T02:54:43.518142+00:00",
+      "label": "cycle_16_turn_2",
+      "input_tokens": 14920,
+      "output_tokens": 231,
+      "usd": 0.080375
+    },
+    {
+      "timestamp": "2026-03-01T02:56:26.358932+00:00",
+      "label": "cycle_16_turn_3",
+      "input_tokens": 21313,
+      "output_tokens": 4096,
+      "usd": 0.208965
+    },
+    {
+      "timestamp": "2026-03-01T02:57:58.594656+00:00",
+      "label": "cycle_16_turn_4",
+      "input_tokens": 21589,
+      "output_tokens": 4096,
+      "usd": 0.210345
+    },
+    {
+      "timestamp": "2026-03-01T02:58:13.066437+00:00",
+      "label": "cycle_17_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 191,
+      "usd": 0.02242
+    },
+    {
+      "timestamp": "2026-03-01T02:58:35.965921+00:00",
+      "label": "cycle_17_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 180,
+      "usd": 0.022145
+    },
+    {
+      "timestamp": "2026-03-01T02:58:40.474433+00:00",
+      "label": "cycle_17_turn_1",
+      "input_tokens": 10564,
+      "output_tokens": 217,
+      "usd": 0.058245
+    },
+    {
+      "timestamp": "2026-03-01T02:58:51.532500+00:00",
+      "label": "cycle_17_turn_2",
+      "input_tokens": 12216,
+      "output_tokens": 104,
+      "usd": 0.06368
+    },
+    {
+      "timestamp": "2026-03-01T02:58:57.053105+00:00",
+      "label": "cycle_17_turn_3",
+      "input_tokens": 15026,
+      "output_tokens": 118,
+      "usd": 0.07808
+    },
+    {
+      "timestamp": "2026-03-01T02:59:03.991389+00:00",
+      "label": "cycle_17_turn_4",
+      "input_tokens": 16176,
+      "output_tokens": 177,
+      "usd": 0.085305
+    },
+    {
+      "timestamp": "2026-03-01T03:00:15.410998+00:00",
+      "label": "cycle_17_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 179,
+      "usd": 0.02212
+    },
+    {
+      "timestamp": "2026-03-01T03:00:19.566593+00:00",
+      "label": "cycle_17_turn_1",
+      "input_tokens": 10563,
+      "output_tokens": 213,
+      "usd": 0.05814
+    },
+    {
+      "timestamp": "2026-03-01T03:00:30.758156+00:00",
+      "label": "cycle_17_turn_2",
+      "input_tokens": 12359,
+      "output_tokens": 165,
+      "usd": 0.06592
+    },
+    {
+      "timestamp": "2026-03-01T03:00:37.231350+00:00",
+      "label": "cycle_17_turn_3",
+      "input_tokens": 17472,
+      "output_tokens": 130,
+      "usd": 0.09061
+    },
+    {
+      "timestamp": "2026-03-01T03:00:44.780090+00:00",
+      "label": "cycle_17_turn_4",
+      "input_tokens": 18458,
+      "output_tokens": 94,
+      "usd": 0.09464
+    },
+    {
+      "timestamp": "2026-03-01T03:00:50.467924+00:00",
+      "label": "cycle_17_turn_5",
+      "input_tokens": 21860,
+      "output_tokens": 129,
+      "usd": 0.112525
+    },
+    {
+      "timestamp": "2026-03-01T03:01:23.148634+00:00",
+      "label": "cycle_17_turn_6",
+      "input_tokens": 22021,
+      "output_tokens": 1368,
+      "usd": 0.144305
+    },
+    {
+      "timestamp": "2026-03-01T03:02:04.255718+00:00",
+      "label": "cycle_17_turn_0",
+      "input_tokens": 3529,
+      "output_tokens": 191,
+      "usd": 0.02242
+    },
+    {
+      "timestamp": "2026-03-01T03:02:10.151663+00:00",
+      "label": "cycle_17_turn_1",
+      "input_tokens": 10575,
+      "output_tokens": 264,
+      "usd": 0.059475
+    },
+    {
+      "timestamp": "2026-03-01T03:02:25.794624+00:00",
+      "label": "cycle_17_turn_2",
+      "input_tokens": 13062,
+      "output_tokens": 201,
+      "usd": 0.070335
+    },
+    {
+      "timestamp": "2026-03-01T03:02:59.027292+00:00",
+      "label": "cycle_17_turn_7",
+      "input_tokens": 23514,
+      "output_tokens": 4096,
+      "usd": 0.21997
+    },
+    {
+      "timestamp": "2026-03-01T03:04:02.715126+00:00",
+      "label": "cycle_17_turn_3",
+      "input_tokens": 18236,
+      "output_tokens": 4096,
+      "usd": 0.19358
+    },
+    {
+      "timestamp": "2026-03-01T03:04:11.729504+00:00",
+      "label": "cycle_17_turn_4",
+      "input_tokens": 18404,
+      "output_tokens": 319,
+      "usd": 0.099995
+    },
+    {
+      "timestamp": "2026-03-01T03:04:26.202774+00:00",
+      "label": "cycle_17_turn_8",
+      "input_tokens": 23696,
+      "output_tokens": 4096,
+      "usd": 0.22088
+    },
+    {
+      "timestamp": "2026-03-01T03:06:02.179323+00:00",
+      "label": "cycle_17_turn_9",
+      "input_tokens": 23884,
+      "output_tokens": 4096,
+      "usd": 0.22182
+    },
+    {
+      "timestamp": "2026-03-01T03:06:06.937638+00:00",
+      "label": "supervisor",
+      "input_tokens": 1687,
+      "output_tokens": 87,
+      "usd": 0.01061
+    },
+    {
+      "timestamp": "2026-03-01T03:06:10.933709+00:00",
+      "label": "supervisor",
+      "input_tokens": 577,
+      "output_tokens": 80,
+      "usd": 0.004885
+    },
+    {
+      "timestamp": "2026-03-01T03:06:25.398758+00:00",
+      "label": "cycle_18_turn_0",
+      "input_tokens": 3558,
+      "output_tokens": 187,
+      "usd": 0.022465
+    },
+    {
+      "timestamp": "2026-03-01T03:06:30.219354+00:00",
+      "label": "cycle_18_turn_1",
+      "input_tokens": 11921,
+      "output_tokens": 221,
+      "usd": 0.06513
+    },
+    {
+      "timestamp": "2026-03-01T03:06:41.054643+00:00",
+      "label": "cycle_18_turn_2",
+      "input_tokens": 13366,
+      "output_tokens": 187,
+      "usd": 0.071505
+    },
+    {
+      "timestamp": "2026-03-01T03:06:47.380841+00:00",
+      "label": "cycle_18_turn_3",
+      "input_tokens": 17489,
+      "output_tokens": 128,
+      "usd": 0.090645
+    },
+    {
+      "timestamp": "2026-03-01T03:06:52.950410+00:00",
+      "label": "cycle_18_turn_4",
+      "input_tokens": 18063,
+      "output_tokens": 90,
+      "usd": 0.092565
+    },
+    {
+      "timestamp": "2026-03-01T03:07:40.376650+00:00",
+      "label": "cycle_18_turn_5",
+      "input_tokens": 19926,
+      "output_tokens": 1939,
+      "usd": 0.148105
+    },
+    {
+      "timestamp": "2026-03-01T03:08:28.150046+00:00",
+      "label": "cycle_18_turn_6",
+      "input_tokens": 21982,
+      "output_tokens": 2024,
+      "usd": 0.16051
+    },
+    {
+      "timestamp": "2026-03-01T03:09:27.088620+00:00",
+      "label": "cycle_18_turn_7",
+      "input_tokens": 24103,
+      "output_tokens": 2737,
+      "usd": 0.18894
+    },
+    {
+      "timestamp": "2026-03-01T03:09:52.167492+00:00",
+      "label": "cycle_18_turn_8",
+      "input_tokens": 27013,
+      "output_tokens": 1012,
+      "usd": 0.160365
+    },
+    {
+      "timestamp": "2026-03-01T03:10:01.549683+00:00",
+      "label": "cycle_18_turn_9",
+      "input_tokens": 28120,
+      "output_tokens": 331,
+      "usd": 0.148875
+    },
+    {
+      "timestamp": "2026-03-01T03:10:04.604867+00:00",
+      "label": "supervisor",
+      "input_tokens": 2323,
+      "output_tokens": 60,
+      "usd": 0.013115
+    },
+    {
+      "timestamp": "2026-03-01T03:10:08.614521+00:00",
+      "label": "supervisor",
+      "input_tokens": 2433,
+      "output_tokens": 75,
+      "usd": 0.01404
+    },
+    {
+      "timestamp": "2026-03-01T03:10:11.820238+00:00",
+      "label": "supervisor",
+      "input_tokens": 3175,
+      "output_tokens": 67,
+      "usd": 0.01755
+    },
+    {
+      "timestamp": "2026-03-01T03:10:16.697017+00:00",
+      "label": "supervisor",
+      "input_tokens": 1314,
+      "output_tokens": 81,
+      "usd": 0.008595
+    },
+    {
+      "timestamp": "2026-03-01T03:10:30.460700+00:00",
+      "label": "cycle_19_turn_0",
+      "input_tokens": 3614,
+      "output_tokens": 195,
+      "usd": 0.022945
+    },
+    {
+      "timestamp": "2026-03-01T03:10:34.815346+00:00",
+      "label": "cycle_19_turn_1",
+      "input_tokens": 15393,
+      "output_tokens": 132,
+      "usd": 0.080265
     }
   ],
-  "total_input_tokens": 577,
-  "total_output_tokens": 1934,
-  "total_usd": 0.051235
+  "total_input_tokens": 1559314,
+  "total_output_tokens": 89796,
+  "total_usd": 10.04147
 }

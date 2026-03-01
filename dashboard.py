@@ -2,6 +2,7 @@
 
 import atexit
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -10,9 +11,13 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
+from openai import OpenAI
 from pydantic import BaseModel
 
 import yaml
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from agent import (
     ROOT,
@@ -122,6 +127,14 @@ def index():
     if not html.exists():
         raise HTTPException(404, "static/index.html not found")
     return FileResponse(html)
+
+
+@app.get("/logo.png")
+def logo():
+    logo_path = ROOT / "deepshika.png"
+    if not logo_path.exists():
+        raise HTTPException(404, "logo not found")
+    return FileResponse(logo_path, media_type="image/png")
 
 
 @app.get("/api/config")
@@ -438,6 +451,85 @@ def api_update_budget(name: str, body: BudgetUpdate):
         yaml.dump(agent_cfg, default_flow_style=False, sort_keys=False)
     )
     return {"saved": True, "budget": agent_cfg["budget"]}
+
+
+# --- Summarize ---
+
+@app.post("/api/topics/{name}/summarize")
+def api_summarize(name: str):
+    """Summarize all research files for a topic using the LLM."""
+    paths = _paths_for(name)
+    research_dir = paths["research_dir"]
+    if not research_dir.exists():
+        raise HTTPException(404, "No research directory found")
+
+    files = sorted(research_dir.glob("*.md"))
+    if not files:
+        raise HTTPException(404, "No research files to summarize")
+
+    # Gather all research content
+    research_parts = []
+    for f in files:
+        content = f.read_text().strip()
+        if content:
+            research_parts.append(f"## {f.name}\n\n{content}")
+
+    if not research_parts:
+        raise HTTPException(404, "Research files are empty")
+
+    combined = "\n\n---\n\n".join(research_parts)
+
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise HTTPException(500, "OPENROUTER_API_KEY not set")
+
+    config = load_config()
+    model = config.get("scaffold_model", "anthropic/claude-sonnet-4.6")
+
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
+
+    response = client.chat.completions.create(
+        model=model,
+        max_tokens=4096,
+        messages=[
+            {"role": "system", "content": (
+                "You are a research analyst. You will be given the full research output from an AI research agent. "
+                "Produce a concise executive summary in markdown with:\n"
+                "- A 2-3 sentence TL;DR at the top\n"
+                "- Key findings (bulleted)\n"
+                "- Top recommendations (numbered)\n"
+                "- Open questions or gaps\n"
+                "Be direct, specific, and reference real data points from the research."
+            )},
+            {"role": "user", "content": f"Summarize the following research:\n\n{combined}"},
+        ],
+    )
+
+    summary = response.choices[0].message.content
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    # Save as JSON with timestamp
+    summary_path = paths["base"] / "data" / "summary.json"
+    summary_path.write_text(json.dumps({
+        "summary": summary,
+        "generated_at": generated_at,
+    }, indent=2))
+
+    return {"summary": summary, "generated_at": generated_at}
+
+
+@app.get("/api/topics/{name}/summary")
+def api_get_summary_file(name: str):
+    """Return the saved summary if it exists."""
+    paths = _paths_for(name)
+    summary_path = paths["base"] / "data" / "summary.json"
+    if not summary_path.exists():
+        return {"summary": None, "generated_at": None}
+    data = json.loads(summary_path.read_text())
+    return {"summary": data.get("summary"), "generated_at": data.get("generated_at")}
 
 
 # --- Shutdown hook ---

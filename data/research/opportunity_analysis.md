@@ -110,3 +110,75 @@ This founder's experience validates a critical pattern emerging across multiple 
 
 This aligns with BetterPic (landscape_scan.md §4.1) where the founder used marketing consulting experience to identify the AI headshot opportunity, then scaled the product.
 
+
+
+---
+
+## Cycle 17: Risk Assessment & Churn Benchmarks
+
+### AI Project Failure Rates (Enterprise Context)
+
+Source: RheoData (Nov 2025), citing Gartner, McKinsey, and industry surveys
+
+- **70-85% of AI projects fail** to meet objectives, are abandoned, or never reach production
+- **Only 30% of AI projects move past pilot** into full-scale implementation (Gartner, late 2024)
+- **42% of businesses scrapped most AI initiatives** in 2025, up from 17% prior year
+- **46% of AI proof-of-concepts** are scrapped before reaching production (average organization)
+- AI project failure rate is **2x traditional IT project failure rates**
+
+**Top failure causes (ranked)**:
+1. Poor data quality / insufficient data
+2. Lack of clear objectives / ROI misalignment
+3. Talent and expertise gaps
+4. Infrastructure and integration challenges
+5. Unrealistic expectations
+6. Lack of trust / adoption resistance
+7. Proof-of-concept → production scaling failures
+8. Ethical/governance concerns
+
+**Implication for small AI businesses**: These stats are for enterprise AI projects. For AI agencies and SaaS builders, the relevant takeaway is: clients will have been burned before. Positioning as the "no-BS, results-focused" alternative to failed enterprise AI initiatives is a valid sales angle. Also: keep scope small and deliver working solutions, not grand visions.
+
+### SaaS Churn Benchmarks (2024-2025)
+
+Source: First Page Sage (2025 Report), GrowPredictably, Bayleaf Digital
+
+| Metric | Benchmark |
+|---|---|
+| Annual churn (healthy SaaS) | 5.2% (First Page Sage 2025) |
+| Monthly churn target | <3% (Webdew) |
+| Annual churn target (sustainable) | 5-7% (GrowPredictably) |
+| Logo churn danger zone | >8% annual |
+| CAC payback | 6 months (benchmark) |
+| LTV to CAC ratio | 6:1 (benchmark) |
+| Customer acquisition cost (SaaS avg) | $728 |
+| ARR growth (<$1M revenue) | 68% |
+| ARR growth (>$1M revenue) | 45% |
+| Upsell/cross-sell rate | 23% |
+
+**Implication for AI SaaS/micro-SaaS**: To hit $10K MRR sustainably, you need ~$120K ARR with <5% annual churn. At $50/mo ARPU, that's 200 customers losing <10/year. At $200/mo ARPU, that's 50 customers losing <3/year. Higher ARPU (B2B) is dramatically easier to sustain.
+
+### Updated Risk Matrix by Opportunity Type
+
+| Opportunity | Primary Risk | Mitigation | Severity |
+|---|---|---|---|
+| AI Automation Agency | Client delivery failures; scope creep | Productized packages; strict scope control | Medium |
+| AI Consulting | Feast/famine revenue; skill obsolescence | Retainer model; continuous learning | Medium |
+| AI SaaS | High churn; CAC > revenue; slow to $10K | B2B focus ($200+ ARPU); SEO-led growth | High |
+| AI Voice Agent Agency | Platform dependency; tech immaturity | Multi-platform skills; focus on proven use cases | Medium-High |
+| AI Content Agency | Google algorithm risk; commoditization | Quality control; niche specialization; diversify beyond SEO | High |
+| White-Label AI | Margin compression; no differentiation | Add proprietary layer; focus on service not just resale | High |
+
+### Realistic Timeline Assessment (Updated)
+
+Based on all data collected Cycles 1-17:
+
+| Opportunity | Optimistic | Realistic | Pessimistic |
+|---|---|---|---|
+| AI Automation Agency | 3-6 months | 6-12 months | 12-18 months |
+| AI Consulting | 1-3 months (with network) | 3-9 months | 9-18 months |
+| Vertical AI SaaS | 6-12 months | 12-24 months | 24-36 months |
+| AI Voice Agent Agency | 3-6 months | 6-12 months | 12-18 months |
+| AI Content Agency | 3-6 months | 6-12 months | 12-18 months |
+
+**Key caveat**: The "optimistic" timeline assumes existing skills, network, and sales ability. Most people starting from zero should plan for the "realistic" column. The Reddit founder data (Cycle 3) shows ~$3K-$12K/month after a full year of agency work — confirming the realistic estimate.
+

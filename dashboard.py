@@ -3,12 +3,14 @@
 import atexit
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import requests as http_requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from openai import OpenAI
@@ -530,6 +532,303 @@ def api_get_summary_file(name: str):
         return {"summary": None, "generated_at": None}
     data = json.loads(summary_path.read_text())
     return {"summary": data.get("summary"), "generated_at": data.get("generated_at")}
+
+
+# --- Notion publishing ---
+
+NOTION_API = "https://api.notion.com/v1"
+NOTION_VERSION = "2022-06-28"
+
+
+def _notion_headers() -> dict:
+    token = os.environ.get("NOTION_TOKEN", "")
+    if not token:
+        raise HTTPException(500, "NOTION_TOKEN not set")
+    return {
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": NOTION_VERSION,
+        "Content-Type": "application/json",
+    }
+
+
+def _md_to_notion_blocks(md_text: str) -> list[dict]:
+    """Convert markdown text to Notion block objects.
+
+    Handles headings, unordered/ordered lists, dividers, and paragraphs.
+    Content is chunked to respect Notion's 2000-char limit per rich text span.
+    """
+    blocks: list[dict] = []
+    lines = md_text.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        # Divider
+        if re.match(r"^-{3,}$", line.strip()):
+            blocks.append({"object": "block", "type": "divider", "divider": {}})
+            i += 1
+            continue
+
+        # Headings
+        h3 = re.match(r"^### (.+)$", line)
+        if h3:
+            blocks.append(_heading_block(3, h3.group(1)))
+            i += 1
+            continue
+        h2 = re.match(r"^## (.+)$", line)
+        if h2:
+            blocks.append(_heading_block(2, h2.group(1)))
+            i += 1
+            continue
+        h1 = re.match(r"^# (.+)$", line)
+        if h1:
+            blocks.append(_heading_block(1, h1.group(1)))
+            i += 1
+            continue
+
+        # Unordered list item
+        ul = re.match(r"^[-*] (.+)$", line)
+        if ul:
+            blocks.append({
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {"rich_text": _rich_text(ul.group(1))},
+            })
+            i += 1
+            continue
+
+        # Ordered list item
+        ol = re.match(r"^\d+\. (.+)$", line)
+        if ol:
+            blocks.append({
+                "object": "block",
+                "type": "numbered_list_item",
+                "numbered_list_item": {"rich_text": _rich_text(ol.group(1))},
+            })
+            i += 1
+            continue
+
+        # Empty line — skip
+        if not line.strip():
+            i += 1
+            continue
+
+        # Paragraph (collect consecutive non-empty, non-special lines)
+        para_lines = [line]
+        i += 1
+        while i < len(lines):
+            nxt = lines[i]
+            if not nxt.strip():
+                break
+            if re.match(r"^(#{1,3} |[-*] |\d+\. |-{3,}$)", nxt):
+                break
+            para_lines.append(nxt)
+            i += 1
+        text = " ".join(para_lines)
+        blocks.append({
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {"rich_text": _rich_text(text)},
+        })
+
+    return blocks
+
+
+def _heading_block(level: int, text: str) -> dict:
+    key = f"heading_{level}"
+    return {"object": "block", "type": key, key: {"rich_text": _rich_text(text)}}
+
+
+def _rich_text(text: str) -> list[dict]:
+    """Split text into <=2000-char rich_text spans (Notion limit)."""
+    spans = []
+    for start in range(0, len(text), 2000):
+        spans.append({"type": "text", "text": {"content": text[start : start + 2000]}})
+    return spans or [{"type": "text", "text": {"content": ""}}]
+
+
+def _notion_create_page(parent_id: str, title: str, blocks: list[dict], headers: dict) -> dict:
+    """Create a child page under parent_id and append blocks."""
+    body = {
+        "parent": {"page_id": parent_id},
+        "properties": {"title": [{"text": {"content": title}}]},
+    }
+    r = http_requests.post(f"{NOTION_API}/pages", headers=headers, json=body, timeout=30)
+    r.raise_for_status()
+    page = r.json()
+
+    # Append blocks in batches of 100 (Notion limit)
+    page_id = page["id"]
+    for start in range(0, len(blocks), 100):
+        chunk = blocks[start : start + 100]
+        r2 = http_requests.patch(
+            f"{NOTION_API}/blocks/{page_id}/children",
+            headers=headers,
+            json={"children": chunk},
+            timeout=30,
+        )
+        r2.raise_for_status()
+
+    return page
+
+
+def _notion_update_page(page_id: str, title: str, blocks: list[dict], headers: dict) -> dict:
+    """Update an existing page: clear old blocks, set title, append new blocks."""
+    # Update title
+    http_requests.patch(
+        f"{NOTION_API}/pages/{page_id}",
+        headers=headers,
+        json={"properties": {"title": [{"text": {"content": title}}]}},
+        timeout=30,
+    ).raise_for_status()
+
+    # Delete existing children
+    children_r = http_requests.get(
+        f"{NOTION_API}/blocks/{page_id}/children?page_size=100",
+        headers=headers,
+        timeout=30,
+    )
+    children_r.raise_for_status()
+    for child in children_r.json().get("results", []):
+        http_requests.delete(
+            f"{NOTION_API}/blocks/{child['id']}",
+            headers=headers,
+            timeout=30,
+        )
+
+    # Append new blocks in batches
+    for start in range(0, len(blocks), 100):
+        chunk = blocks[start : start + 100]
+        http_requests.patch(
+            f"{NOTION_API}/blocks/{page_id}/children",
+            headers=headers,
+            json={"children": chunk},
+            timeout=30,
+        ).raise_for_status()
+
+    return {"id": page_id}
+
+
+@app.post("/api/topics/{name}/publish-to-notion")
+def api_publish_to_notion(name: str):
+    """Publish all research .md files to Notion under a topic parent page."""
+    paths = _paths_for(name)
+    research_dir = paths["research_dir"]
+    if not research_dir.exists():
+        raise HTTPException(404, "No research directory found")
+
+    files = sorted(research_dir.glob("*.md"))
+    if not files:
+        raise HTTPException(404, "No research files to publish")
+
+    root_parent_id = os.environ.get("NOTION_PAGE_ID", "")
+    if not root_parent_id:
+        raise HTTPException(500, "NOTION_PAGE_ID not set")
+
+    headers = _notion_headers()
+
+    # Load publish state
+    publish_state_path = paths["data_dir"] / "notion_publish.json"
+    publish_state: dict = {}
+    if publish_state_path.exists():
+        publish_state = json.loads(publish_state_path.read_text())
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Ensure a topic-level parent page exists
+    topic_page_id = publish_state.get("_topic_page_id")
+    topic_page_url = publish_state.get("_topic_page_url")
+    if topic_page_id:
+        # Verify it still exists
+        try:
+            r = http_requests.get(
+                f"{NOTION_API}/pages/{topic_page_id}",
+                headers=headers,
+                timeout=15,
+            )
+            if r.status_code == 404 or r.json().get("archived"):
+                topic_page_id = None
+        except Exception:
+            topic_page_id = None
+
+    if not topic_page_id:
+        page = _notion_create_page(root_parent_id, name, [], headers)
+        topic_page_id = page["id"]
+        topic_page_url = page.get("url", f"https://notion.so/{topic_page_id.replace('-', '')}")
+        publish_state["_topic_page_id"] = topic_page_id
+        publish_state["_topic_page_url"] = topic_page_url
+
+    results = []
+
+    for f in files:
+        content = f.read_text().strip()
+        if not content:
+            continue
+
+        title = f.stem.replace("_", " ").replace("-", " ").title()
+        blocks = _md_to_notion_blocks(content)
+        file_key = f.name
+        existing = publish_state.get(file_key)
+
+        try:
+            if existing and isinstance(existing, dict) and existing.get("page_id"):
+                try:
+                    _notion_update_page(existing["page_id"], title, blocks, headers)
+                    page_id = existing["page_id"]
+                    url = existing.get("url", f"https://notion.so/{page_id.replace('-', '')}")
+                except http_requests.HTTPError:
+                    page = _notion_create_page(topic_page_id, title, blocks, headers)
+                    page_id = page["id"]
+                    url = page.get("url", f"https://notion.so/{page_id.replace('-', '')}")
+            else:
+                page = _notion_create_page(topic_page_id, title, blocks, headers)
+                page_id = page["id"]
+                url = page.get("url", f"https://notion.so/{page_id.replace('-', '')}")
+
+            publish_state[file_key] = {
+                "page_id": page_id,
+                "url": url,
+                "published_at": now,
+            }
+            results.append({"file": file_key, "url": url, "status": "ok"})
+        except http_requests.HTTPError as e:
+            results.append({"file": file_key, "status": "error", "error": str(e)})
+
+    # Save publish state
+    publish_state_path.write_text(json.dumps(publish_state, indent=2))
+
+    return {
+        "published_at": now,
+        "topic_url": topic_page_url,
+        "results": results,
+    }
+
+
+@app.get("/api/topics/{name}/notion-status")
+def api_notion_status(name: str):
+    """Return the last publish state for a topic."""
+    paths = _paths_for(name)
+    publish_state_path = paths["data_dir"] / "notion_publish.json"
+    if not publish_state_path.exists():
+        return {"published": False, "published_at": None, "topic_url": None, "pages": []}
+    pub = json.loads(publish_state_path.read_text())
+    timestamps = [
+        v.get("published_at", "")
+        for k, v in pub.items()
+        if isinstance(v, dict) and not k.startswith("_")
+    ]
+    latest = max(timestamps) if timestamps else None
+    pages = [
+        {"file": k, "url": v.get("url", ""), "published_at": v.get("published_at", "")}
+        for k, v in pub.items()
+        if isinstance(v, dict) and not k.startswith("_")
+    ]
+    return {
+        "published": True,
+        "published_at": latest,
+        "topic_url": pub.get("_topic_page_url"),
+        "pages": pages,
+    }
 
 
 # --- Shutdown hook ---

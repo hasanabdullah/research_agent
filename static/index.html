@@ -182,6 +182,7 @@
 let state = { topics: [], selected: null, tab: 'insights', config: {} };
 let refreshTimer = null;
 let researchPollTimer = null;
+const _shownCheckpoints = new Set();
 
 async function api(path, opts) {
   // Encode path segments but preserve query string
@@ -218,7 +219,24 @@ function manageAutoRefresh() {
 
 async function refreshData() {
   try {
+    const wasRunning = new Set(state.topics.filter(t => t.running).map(t => t.name));
     state.topics = await api('topics');
+    // Detect checkpoint transitions: was running, now stopped with checkpoint
+    for (const t of state.topics) {
+      if (wasRunning.has(t.name) && !t.running && t.checkpoint) {
+        const key = t.name + ':' + t.checkpoint.threshold;
+        if (!_shownCheckpoints.has(key)) {
+          _shownCheckpoints.add(key);
+          showCheckpointModal(t);
+        }
+      }
+      // Clear shown checkpoint when agent is running again
+      if (t.running) {
+        for (const key of _shownCheckpoints) {
+          if (key.startsWith(t.name + ':')) _shownCheckpoints.delete(key);
+        }
+      }
+    }
     renderSidebar();
     // Refresh current tab content
     if (state.selected && state.tab === 'monitor') {
@@ -228,6 +246,58 @@ async function refreshData() {
     }
   } catch (e) { /* ignore refresh errors */ }
   manageAutoRefresh();
+}
+
+function showCheckpointModal(topic) {
+  const n = esc(topic.name);
+  const cp = topic.checkpoint;
+  const budgetTotal = topic.budget_total != null ? '$' + topic.budget_total.toFixed(2) : '—';
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="width:460px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:rgba(245,158,11,0.12)">
+          <span style="color:var(--yellow);font-size:18px">&#x23F8;</span>
+        </span>
+        <h2 style="margin:0">Checkpoint Reached</h2>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:13px;color:var(--text2)">Agent</span>
+          <span style="font-size:13px;font-weight:600">${escHtml(topic.name)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:13px;color:var(--text2)">Checkpoint</span>
+          <span style="font-size:13px;font-weight:600;color:var(--yellow)">${escHtml(cp.label)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:13px;color:var(--text2)">Budget spent</span>
+          <span style="font-size:13px;font-weight:600">$${topic.cost.toFixed(4)} / ${budgetTotal}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-size:13px;color:var(--text2)">Cycles completed</span>
+          <span style="font-size:13px;font-weight:600">${topic.cycles}</span>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="checkpointReview('${n}', this)">Review Research</button>
+        <button class="btn-primary" onclick="checkpointResume('${n}', this)">Resume Agent</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function checkpointReview(name, btn) {
+  btn.closest('.modal-overlay').remove();
+  selectTopic(name);
+  switchTab('research');
+}
+
+async function checkpointResume(name, btn) {
+  btn.closest('.modal-overlay').remove();
+  await startAgent(name);
 }
 
 function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }

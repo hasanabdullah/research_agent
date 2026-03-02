@@ -33,7 +33,9 @@
   .topic-card .name { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px; color: #f0f0f0; }
   .topic-card .active-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: inline-block; flex-shrink: 0; }
   .topic-card .running-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: inline-block; flex-shrink: 0; animation: pulse 1.5s ease-in-out infinite; }
+  .topic-card .crashed-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); display: inline-block; flex-shrink: 0; animation: pulse-red 1s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
   .topic-card .meta { font-size: 11px; color: #9ca3af; margin-top: 3px; display: flex; gap: 10px; }
   .topic-card:hover .delete-btn { opacity: 1 !important; }
   .topic-card .delete-btn:hover { color: var(--red) !important; }
@@ -412,7 +414,7 @@ function renderSidebar() {
     <div class="topic-card ${state.selected === t.name ? 'selected' : ''}" onclick="selectTopic('${n}')">
       <div class="name" style="justify-content:space-between">
         <span style="display:flex;align-items:center;gap:6px">
-          ${t.running ? '<span class="running-dot" title="Running"></span>' : (t.active ? '<span class="active-dot"></span>' : '')}
+          ${t.running ? '<span class="running-dot" title="Running"></span>' : (t.crashed ? '<span class="crashed-dot" title="Crashed"></span>' : (t.active ? '<span class="active-dot"></span>' : ''))}
           ${escHtml(t.name)}
         </span>
         <span style="display:flex;gap:2px">
@@ -423,7 +425,7 @@ function renderSidebar() {
       <div class="meta">
         <span>${t.cycles} cycles</span>
         <span>$${t.cost.toFixed(4)}</span>
-        ${t.running ? '<span style="color:var(--green)">running</span>' : (t.checkpoint ? '<span style="color:var(--yellow)">checkpoint</span>' : '')}
+        ${t.running ? '<span style="color:var(--green)">running</span>' : (t.crashed ? '<span style="color:var(--red)">crashed</span>' : (t.checkpoint ? '<span style="color:var(--yellow)">checkpoint</span>' : ''))}
       </div>
     </div>
   `}).join('');
@@ -468,6 +470,12 @@ function renderAgentControl() {
       <span class="running-dot" style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s ease-in-out infinite"></span>
       <span style="color:var(--green);font-size:12px">Running</span>
       <button style="font-size:11px;background:none;border:1px solid var(--red);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--red)" onmouseover="this.style.background='var(--red)';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='var(--red)'" onclick="stopAgent('${n}')">Stop</button>
+    `;
+  } else if (t.crashed) {
+    el.innerHTML = `
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block;animation:pulse-red 1s ease-in-out infinite"></span>
+      <span style="color:var(--red);font-size:12px;font-weight:600">Crashed</span>
+      <button style="font-size:11px;background:var(--green);border:1px solid var(--green);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="startAgent('${n}')">Restart</button>
     `;
   } else if (t.checkpoint) {
     el.innerHTML = `

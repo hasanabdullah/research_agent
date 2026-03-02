@@ -42,6 +42,7 @@ STATIC_DIR = ROOT / "static"
 
 # --- Running agent registry ---
 _running_agents: dict[str, dict] = {}
+_crashed_agents: set[str] = set()  # tracks agents that crashed until restarted
 
 
 # --- Models ---
@@ -736,6 +737,7 @@ def api_start_agent(name: str, delay: int = 10):
         "started_at": datetime.now(timezone.utc).isoformat(),
         "log_file": log_file,
     }
+    _crashed_agents.discard(name)
 
     return {"started": name, "pid": proc.pid}
 
@@ -782,14 +784,20 @@ def api_agents_status():
 
         entry = _running_agents.get(name)
         running = False
+        crashed = name in _crashed_agents
         pid = None
         started_at = None
         if entry:
-            if entry["process"].poll() is None:
+            proc = entry["process"]
+            rc = proc.poll()
+            if rc is None:
                 running = True
                 pid = entry["pid"]
                 started_at = entry["started_at"]
             else:
+                if rc != 0:
+                    _crashed_agents.add(name)
+                    crashed = True
                 if "log_file" in entry:
                     entry["log_file"].close()
                 del _running_agents[name]
@@ -811,6 +819,7 @@ def api_agents_status():
         result.append({
             "name": name,
             "running": running,
+            "crashed": crashed,
             "pid": pid,
             "started_at": started_at,
             "cost": round(cost, 4),

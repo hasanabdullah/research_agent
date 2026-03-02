@@ -13,7 +13,6 @@ from typing import Optional
 import requests as http_requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
-from openai import OpenAI
 from pydantic import BaseModel
 
 import yaml
@@ -34,6 +33,7 @@ from agent import (
     save_config,
 )
 from costs import _load_ledger, get_summary
+from llm import get_client, resolve_model
 
 app = FastAPI(title="Deepshika Dashboard")
 
@@ -481,20 +481,13 @@ def api_summarize(name: str):
 
     combined = "\n\n---\n\n".join(research_parts)
 
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        raise HTTPException(500, "OPENROUTER_API_KEY not set")
-
     config = load_config()
     model = config.get("scaffold_model", "anthropic/claude-sonnet-4.6")
 
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
-    )
+    client = get_client()
 
     response = client.chat.completions.create(
-        model=model,
+        model=resolve_model(model),
         max_tokens=4096,
         messages=[
             {"role": "system", "content": (

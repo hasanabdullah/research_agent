@@ -1,0 +1,6 @@
+# Competitive Analysis
+
+Key question: For each of the 20 problems, who is currently solving it, at what price, with what weaknesses, and where are the gaps?
+
+---
+

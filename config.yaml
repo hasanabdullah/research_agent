@@ -1,4 +1,5 @@
-# OpenRouter model name
+# Model name — OpenRouter format works with any provider;
+# resolve_model() auto-converts for Anthropic/OpenAI when needed.
 model: anthropic/claude-opus-4.6
 
 # research = auto-approve research files, refuse code edits
@@ -9,7 +10,7 @@ budget:
   max_per_day_usd: 10.00
   max_total_usd: 10.00
 
-# Cost per 1M tokens (Opus 4.6 via OpenRouter)
+# Cost per 1M tokens (adjust for your provider)
 pricing:
   input_per_mtok: 5.00
   output_per_mtok: 25.00
@@ -30,7 +31,7 @@ modifiable_files:
   - tests/test_agent.py
   - data/identity.json
 
-# Agent can create/edit any .md file under this directory
+# Agent can create/edit any .md or .txt file under this directory
 research_dir: data/research
 
-active_topic: AI transformation ideas
+active_topic: micro-saas-opportunities

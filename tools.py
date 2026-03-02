@@ -244,12 +244,12 @@ def handle_propose_edit(path: str, new_content: str, reasoning: str) -> str:
     # Check if file is in the modifiable list or under research_dir
     modifiable = config.get("modifiable_files", [])
     research_dir = config.get("research_dir", "data/research")
-    is_research = path.startswith(research_dir + "/") and path.endswith(".md")
+    is_research = path.startswith(research_dir + "/") and (path.endswith(".md") or path.endswith(".txt"))
     mode = config.get("mode", "full")
 
     # In research mode, only research files are allowed
     if mode == "research" and not is_research:
-        return f"REFUSED: In research mode — only files under {research_dir}/*.md are editable."
+        return f"REFUSED: In research mode — only files under {research_dir}/*.md or *.txt are editable."
 
     if path not in modifiable and not is_research:
         return f"REFUSED: '{path}' is not in the modifiable files list."

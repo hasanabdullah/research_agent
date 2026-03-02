@@ -1,12 +1,11 @@
 """Supervisor — reviews agent proposals against the constitution."""
 
-import os
 from pathlib import Path
 
-from openai import OpenAI
 import yaml
 
 from costs import record_call
+from llm import get_client, resolve_model
 
 ROOT = Path(__file__).parent
 
@@ -48,12 +47,9 @@ def review_proposal(patch_data: dict, costs_file=None) -> dict:
         f"Then explain your reasoning in 1-3 sentences."
     )
 
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-    )
+    client = get_client()
     response = client.chat.completions.create(
-        model=config.get("model", "anthropic/claude-opus-4.6"),
+        model=resolve_model(config.get("model", "anthropic/claude-opus-4.6")),
         max_tokens=300,
         messages=[{"role": "user", "content": prompt}],
     )

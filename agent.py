@@ -9,11 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import click
-from openai import OpenAI
 import yaml
 from dotenv import load_dotenv
 
 from costs import check_budget, get_summary, record_call
+from llm import get_client, resolve_model
 from supervisor import review_proposal
 from tools import TOOL_DEFINITIONS, dispatch_tool, reset_web_counters, set_paths, _resolve_file_path
 
@@ -105,20 +105,11 @@ def generate_agent_scaffold(name: str, description: str, config: dict, verbose: 
     """
     import re as _re
 
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        if verbose:
-            click.echo("  [scaffold] No OPENROUTER_API_KEY found.")
-        return None
-
     # Use a fast/cheap model for scaffolding, not the expensive agent model
     scaffold_model = config.get("scaffold_model", "anthropic/claude-sonnet-4.6")
 
     try:
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key,
-        )
+        client = get_client()
 
         user_msg = (
             f"Topic name: {name}\n"
@@ -127,7 +118,7 @@ def generate_agent_scaffold(name: str, description: str, config: dict, verbose: 
         )
 
         response = client.chat.completions.create(
-            model=scaffold_model,
+            model=resolve_model(scaffold_model),
             max_tokens=4096,
             messages=[
                 {"role": "system", "content": SCAFFOLD_META_PROMPT},
@@ -510,10 +501,7 @@ def run_cycle(config: dict) -> dict:
 
     # Reflect + Plan: LLM call with tools
     click.echo("Thinking...")
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-    )
+    client = get_client()
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": context},
@@ -526,7 +514,7 @@ def run_cycle(config: dict) -> dict:
 
     for turn in range(10):  # max 10 tool-use turns per cycle
         response = client.chat.completions.create(
-            model=config.get("model", "anthropic/claude-opus-4.6"),
+            model=resolve_model(config.get("model", "anthropic/claude-opus-4.6")),
             max_tokens=4096,
             tools=TOOL_DEFINITIONS,
             messages=messages,

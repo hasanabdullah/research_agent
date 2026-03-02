@@ -32,7 +32,7 @@ Each cycle, the agent:
 - **Constitution + Supervisor** — safety-first design; every file edit is reviewed against 7 immutable principles
 - **Budget enforcement** — per-day and total cost caps with mid-cycle checks
 - **Web dashboard** — create topics, start/stop agents, view research, edit missions, monitor costs
-- **LLM-scaffolded topics** — when you create a topic, an LLM generates the mission, system prompt, and output file structure
+- **LLM-scaffolded topics** — when you create a topic, an LLM generates the mission, agent parameters, and output file structure
 - **Web research tools** — DuckDuckGo search + URL fetching built in (rate-limited per cycle)
 - **Notion publishing** — push research output to Notion pages with one click
 - **Configurable LLM provider** — switch between OpenRouter, Anthropic, or OpenAI without code changes
@@ -67,7 +67,7 @@ LLM_API_KEY=sk-ant-...
 deepshika topic create "market-analysis" --description "Analyze the micro-SaaS market landscape"
 ```
 
-This generates `mission.md`, `system_prompt.md`, and pre-structured research output files via LLM.
+This generates `mission.md`, `agent_parameters.md`, and pre-structured research output files via LLM.
 
 ### 4. Run
 
@@ -150,7 +150,7 @@ deepshika/
 └── topics/
     └── {topic-name}/
         ├── mission.md           # Research goals and output specs
-        ├── system_prompt.md     # Agent instructions for this topic
+        ├── agent_parameters.md     # Agent parameters for this topic
         ├── identity.json        # Agent identity metadata
         ├── agent_config.yaml    # Per-topic budget overrides
         └── data/

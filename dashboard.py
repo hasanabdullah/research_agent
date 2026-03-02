@@ -78,7 +78,7 @@ def _paths_for(name: str) -> dict:
     return {
         "base": base,
         "mission": base / "mission.md",
-        "system_prompt": base / "system_prompt.md",
+        "agent_parameters": base / "agent_parameters.md",
         "identity": base / "identity.json",
         "data_dir": base / "data",
         "research_dir": base / "data" / "research",
@@ -208,7 +208,7 @@ def api_create_topic(body: TopicCreate):
 
     if scaffold:
         (topic_dir / "mission.md").write_text(scaffold["mission"])
-        (topic_dir / "system_prompt.md").write_text(scaffold["system_prompt"])
+        (topic_dir / "agent_parameters.md").write_text(scaffold["agent_parameters"])
 
         # Pre-create output files
         research_dir = topic_dir / "data" / "research"
@@ -306,7 +306,7 @@ def api_put_mission(name: str, body: TextBody):
 @app.get("/api/topics/{name}/prompt")
 def api_get_prompt(name: str):
     paths = _paths_for(name)
-    sp = paths["system_prompt"]
+    sp = paths["agent_parameters"]
     content = sp.read_text() if sp and sp.exists() else ""
     return {"content": content}
 
@@ -314,7 +314,7 @@ def api_get_prompt(name: str):
 @app.put("/api/topics/{name}/prompt")
 def api_put_prompt(name: str, body: TextBody):
     paths = _paths_for(name)
-    paths["system_prompt"].write_text(body.content)
+    paths["agent_parameters"].write_text(body.content)
     return {"saved": True}
 
 

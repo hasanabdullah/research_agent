@@ -572,9 +572,9 @@ async function renderConfigure() {
       <button class="save-btn" onclick="saveMission(this)">Save Mission</button>
     </div>
     <div class="config-section">
-      <h3>system_prompt.md</h3>
+      <h3>Agent Parameters</h3>
       <textarea id="prompt-editor">${escHtml(prompt.content)}</textarea>
-      <button class="save-btn" onclick="savePrompt(this)">Save Prompt</button>
+      <button class="save-btn" onclick="savePrompt(this)">Save Parameters</button>
     </div>
   `;
 }
@@ -611,7 +611,7 @@ async function savePrompt(btn) {
     body: JSON.stringify({ content })
   });
   btn.textContent = 'Saved!'; btn.classList.add('saved');
-  setTimeout(() => { btn.textContent = 'Save Prompt'; btn.classList.remove('saved'); }, 1500);
+  setTimeout(() => { btn.textContent = 'Save Parameters'; btn.classList.remove('saved'); }, 1500);
 }
 
 // --- Create modal ---

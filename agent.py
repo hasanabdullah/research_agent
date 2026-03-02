@@ -68,7 +68,7 @@ def load_agent_config(topic_name: str) -> dict:
 SCAFFOLD_META_PROMPT = """\
 You are a scaffolding generator for a research agent called Deepshika. Given a topic name and description, produce a JSON object with exactly three keys:
 
-1. "system_prompt" — a research-mode system prompt (15-30 lines). Rules:
+1. "agent_parameters" — a research-mode agent parameters file (15-30 lines). Rules:
    - First line: "You are Deepshika, a research agent investigating: <topic>."
    - State RESEARCH ONLY mode — only create/edit files under data/research/.
    - Mandate web_search and web_fetch usage EVERY cycle — the agent must search for CURRENT data, not rely on training data.
@@ -100,7 +100,7 @@ Return ONLY valid JSON. No markdown fences, no explanation outside the JSON.
 def generate_agent_scaffold(name: str, description: str, config: dict, verbose: bool = True) -> dict | None:
     """Call LLM to generate topic-specific scaffold files.
 
-    Returns {"system_prompt": str, "mission": str, "output_files": [...], "_usage": {...}}
+    Returns {"agent_parameters": str, "mission": str, "output_files": [...], "_usage": {...}}
     on success, or None on any failure.
     """
     import re as _re
@@ -147,7 +147,7 @@ def generate_agent_scaffold(name: str, description: str, config: dict, verbose: 
             return None
 
         # Validate required keys
-        if not all(k in result for k in ("system_prompt", "mission", "output_files")):
+        if not all(k in result for k in ("agent_parameters", "mission", "output_files")):
             if verbose:
                 click.echo(f"  [scaffold] Missing keys. Got: {list(result.keys())}")
             return None
@@ -180,7 +180,7 @@ def _write_static_scaffold(topic_dir: Path, name: str, description: str):
         f"## What To Research\n\n(Define your research questions here)\n\n"
         f"## Output Files (create under data/research/)\n\n(Define your output files here)\n"
     )
-    (topic_dir / "system_prompt.md").write_text(
+    (topic_dir / "agent_parameters.md").write_text(
         f"You are Deepshika, a research agent investigating: {name}.\n"
         f"You are in RESEARCH ONLY mode — only research files under data/research/.\n"
         f"You have web_search and web_fetch tools — USE THEM EVERY CYCLE.\n"
@@ -203,7 +203,7 @@ def resolve_topic_paths(config: dict) -> dict:
         return {
             "base": base,
             "mission": base / "mission.md",
-            "system_prompt": base / "system_prompt.md",
+            "agent_parameters": base / "agent_parameters.md",
             "identity": base / "identity.json",
             "data_dir": base / "data",
             "research_dir": base / "data" / "research",
@@ -215,7 +215,7 @@ def resolve_topic_paths(config: dict) -> dict:
     return {
         "base": ROOT,
         "mission": ROOT / "MISSION.md",
-        "system_prompt": None,
+        "agent_parameters": None,
         "identity": ROOT / "data" / "identity.json",
         "data_dir": ROOT / "data",
         "research_dir": ROOT / "data" / "research",
@@ -225,9 +225,9 @@ def resolve_topic_paths(config: dict) -> dict:
     }
 
 
-def load_system_prompt(paths: dict) -> str:
-    """Load system prompt from topic file, or return a generic fallback."""
-    sp_file = paths.get("system_prompt")
+def load_agent_parameters(paths: dict) -> str:
+    """Load agent parameters from topic file, or return a generic fallback."""
+    sp_file = paths.get("agent_parameters")
     if sp_file and sp_file.exists():
         return sp_file.read_text().strip()
     return "You are a research agent. Follow your mission file."
@@ -496,14 +496,14 @@ def run_cycle(config: dict) -> dict:
     context = build_context(identity, config, paths)
     pricing = config.get("pricing", {"input_per_mtok": 1.0, "output_per_mtok": 5.0})
 
-    # Load system prompt from topic file
-    system_prompt = load_system_prompt(paths)
+    # Load agent parameters from topic file
+    agent_parameters = load_agent_parameters(paths)
 
     # Reflect + Plan: LLM call with tools
     click.echo("Thinking...")
     client = get_client()
     messages = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": agent_parameters},
         {"role": "user", "content": context},
     ]
 
@@ -1045,7 +1045,7 @@ def topic_create(name):
     if scaffold:
         # Write LLM-generated files
         (topic_dir / "mission.md").write_text(scaffold["mission"])
-        (topic_dir / "system_prompt.md").write_text(scaffold["system_prompt"])
+        (topic_dir / "agent_parameters.md").write_text(scaffold["agent_parameters"])
 
         # Pre-create output files in data/research/
         research_dir = topic_dir / "data" / "research"
@@ -1093,7 +1093,7 @@ def topic_create(name):
     click.echo(f"\nCreated topic: {name}")
     click.echo(f"  Directory: topics/{name}/")
     click.echo(f"  mission.md — edit to define your research questions")
-    click.echo(f"  system_prompt.md — edit to tune agent behavior")
+    click.echo(f"  agent_parameters.md — edit to tune agent behavior")
     click.echo(f"  identity.json — agent persona for this topic")
     click.echo(f"\nSwitched active_topic to '{name}'")
     click.echo(f"Run 'deepshika run' to start researching.")
@@ -1231,8 +1231,8 @@ def migrate():
         shutil.copy2(mission_src, topic_dir / "mission.md")
         click.echo(f"  Copied MISSION.md -> topics/{topic_name}/mission.md")
 
-    # 2. Extract system prompt from this file's hardcoded string -> system_prompt.md
-    system_prompt = (
+    # 2. Extract agent parameters from this file's hardcoded string -> agent_parameters.md
+    agent_parameters = (
         "You are Deepshika, a market researcher evaluating a data-play acquisition opportunity in consumer AI agent security. "
         "You are in RESEARCH ONLY mode — only research files under data/research/. "
         "Your mission: Determine if there's a viable startup opportunity building a 'Credit Karma for AI agent security' — "
@@ -1259,8 +1259,8 @@ def migrate():
         "The question is: can you build a product consumers actually use, that generates a proprietary dataset "
         "large incumbents would acquire at premium multiples?"
     )
-    (topic_dir / "system_prompt.md").write_text(system_prompt)
-    click.echo(f"  Extracted system prompt -> topics/{topic_name}/system_prompt.md")
+    (topic_dir / "agent_parameters.md").write_text(agent_parameters)
+    click.echo(f"  Extracted agent parameters -> topics/{topic_name}/agent_parameters.md")
 
     # 3. Copy data/identity.json -> topic/identity.json
     identity_src = ROOT / "data" / "identity.json"

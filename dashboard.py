@@ -601,6 +601,107 @@ def api_costs(name: str):
     }
 
 
+# --- Error detection ---
+
+_ERROR_PATTERNS = [
+    (re.compile(r"Traceback \(most recent call last\)"), True),   # start of traceback
+    (re.compile(r"^\w*Error:?\s+(.+)", re.MULTILINE), False),    # ErrorType: message
+    (re.compile(r"^\w*Exception:?\s+(.+)", re.MULTILINE), False),
+    (re.compile(r"Budget exceeded", re.IGNORECASE), False),
+    (re.compile(r"FAILED", re.IGNORECASE), False),
+]
+
+
+def _summarize_error(lines: list[str]) -> str | None:
+    """Extract a human-readable error summary from log tail lines."""
+    text = "\n".join(lines)
+
+    # Look for the last Python exception (ErrorType: message)
+    exc_match = None
+    for m in re.finditer(r"^(\w+(?:Error|Exception)):\s*(.+)", text, re.MULTILINE):
+        exc_match = m
+    if exc_match:
+        err_type = exc_match.group(1)
+        err_msg = exc_match.group(2).strip()[:200]
+        # Make it more readable
+        spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", err_type).lower()
+        return f"{err_type}: {err_msg}"
+
+    # Budget exceeded
+    for line in reversed(lines):
+        if re.search(r"budget exceeded", line, re.IGNORECASE):
+            return "Budget exceeded — agent stopped because spending limit was reached"
+
+    # Generic FAILED
+    for line in reversed(lines):
+        if re.search(r"FAILED", line, re.IGNORECASE):
+            clean = line.strip()[:200]
+            return f"Agent failure: {clean}"
+
+    return None
+
+
+@app.get("/api/topics/{name}/errors")
+def api_topic_errors(name: str):
+    """Check agent.log for errors and detect unexpected process exit."""
+    _topic_dir(name)  # validates existence
+
+    log_path = ROOT / "topics" / name / "data" / "agent.log"
+    has_error = False
+    message = ""
+    timestamp = ""
+
+    # Check for unexpected process exit
+    entry = _running_agents.get(name)
+    unexpected_exit = False
+    if entry:
+        proc = entry["process"]
+        rc = proc.poll()
+        if rc is not None and rc != 0:
+            unexpected_exit = True
+            message = f"Agent process exited unexpectedly (exit code {rc})"
+
+    # Read log tail for error patterns
+    if log_path.exists():
+        try:
+            raw = log_path.read_bytes()
+            text = raw.decode("utf-8", errors="replace")
+            all_lines = text.splitlines()
+            tail = all_lines[-50:] if len(all_lines) > 50 else all_lines
+
+            # Check for error patterns
+            tail_text = "\n".join(tail)
+            found_error = False
+            for pat, _ in _ERROR_PATTERNS:
+                if pat.search(tail_text):
+                    found_error = True
+                    break
+
+            if found_error:
+                summary = _summarize_error(tail)
+                if summary:
+                    has_error = True
+                    message = summary
+
+            # Get timestamp from last log line
+            if tail:
+                # Try to extract timestamp from log line
+                ts_match = re.match(r"(\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2})", tail[-1])
+                if ts_match:
+                    timestamp = ts_match.group(1)
+                else:
+                    timestamp = datetime.now(timezone.utc).isoformat()
+        except Exception:
+            pass
+
+    if unexpected_exit and not has_error:
+        has_error = True
+        if not timestamp:
+            timestamp = datetime.now(timezone.utc).isoformat()
+
+    return {"has_error": has_error, "message": message, "timestamp": timestamp}
+
+
 # --- Agent process management ---
 
 @app.post("/api/agents/{name}/start")

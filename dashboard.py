@@ -717,11 +717,15 @@ def api_start_agent(name: str, delay: int = 10):
 
     log_path = ROOT / "topics" / name / "data" / "agent.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_file = open(log_path, "a")
+    log_file = open(log_path, "a", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
 
     proc = subprocess.Popen(
         [sys.executable, "-m", "agent", "run-topic", name, "--cycles", "0", "--delay", str(delay)],
         cwd=str(ROOT),
+        env=env,
         stdout=log_file,
         stderr=subprocess.STDOUT,
     )

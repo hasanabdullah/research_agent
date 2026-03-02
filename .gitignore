@@ -6,4 +6,3 @@ dist/
 build/
 .venv/
 topics/*/mission.md
-topics/*/agent_parameters.md

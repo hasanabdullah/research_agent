@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -61,6 +62,16 @@ class TextBody(BaseModel):
     content: str
 
 
+class NotionConfig(BaseModel):
+    token: str = ""
+    root_page_id: str = ""
+
+
+class LlmConfig(BaseModel):
+    provider: str = ""
+    api_key: str = ""
+
+
 # --- Helpers ---
 
 def _topic_dir(name: str) -> Path:
@@ -100,7 +111,7 @@ def _load_agent_budget(name: str) -> dict | None:
 def _topic_summary(name: str, active_topic: str) -> dict:
     paths = _paths_for(name)
     costs_file = paths["costs_file"]
-    cost = _load_ledger(costs_file)["total_usd"] if costs_file.exists() else 0.0
+    cost = _load_ledger(costs_file).get("total_usd", 0.0) if costs_file.exists() else 0.0
     agent_budget = _load_agent_budget(name)
     entry = _running_agents.get(name)
     running = False
@@ -111,6 +122,20 @@ def _topic_summary(name: str, active_topic: str) -> dict:
         else:
             # Process ended — clean up
             del _running_agents[name]
+    # Checkpoint state
+    cp_file = ROOT / "topics" / name / "data" / "checkpoints.json"
+    checkpoint = None
+    if cp_file.exists():
+        cp_data = json.loads(cp_file.read_text())
+        cp_hit = cp_data.get("checkpoints_hit", [])
+        if cp_hit and not running:
+            last_cp = max(cp_hit)
+            checkpoint = {
+                "threshold": last_cp,
+                "label": f"{int(last_cp * 100)}%",
+                "checkpoints_hit": cp_hit,
+            }
+
     return {
         "name": name,
         "cycles": get_cycle_count(paths),
@@ -118,6 +143,7 @@ def _topic_summary(name: str, active_topic: str) -> dict:
         "active": name == active_topic,
         "running": running,
         "budget": agent_budget,
+        "checkpoint": checkpoint,
     }
 
 
@@ -258,6 +284,38 @@ def api_create_topic(body: TopicCreate):
         )
 
     return {"created": name, "scaffolded": scaffolded, "output_files": output_file_names}
+
+
+@app.delete("/api/topics/{name}")
+def api_delete_topic(name: str):
+    """Delete a topic and all its data. Stops the agent if running."""
+    topic_dir = _topic_dir(name)  # validates existence
+
+    # Stop agent if running
+    if name in _running_agents:
+        entry = _running_agents[name]
+        proc = entry["process"]
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        if "log_file" in entry:
+            entry["log_file"].close()
+        del _running_agents[name]
+
+    # Remove the directory tree
+    import shutil
+    shutil.rmtree(topic_dir)
+
+    # If this was the active topic, clear it
+    config = load_config()
+    if config.get("active_topic") == name:
+        config["active_topic"] = ""
+        save_config(config)
+
+    return {"deleted": name}
 
 
 @app.post("/api/topics/{name}/switch")
@@ -406,7 +464,7 @@ def api_agents_status():
             continue
         name = d.name
         costs_file = d / "data" / "costs.json"
-        cost = _load_ledger(costs_file)["total_usd"] if costs_file.exists() else 0.0
+        cost = _load_ledger(costs_file).get("total_usd", 0.0) if costs_file.exists() else 0.0
         agent_budget = _load_agent_budget(name)
 
         entry = _running_agents.get(name)
@@ -423,6 +481,20 @@ def api_agents_status():
                     entry["log_file"].close()
                 del _running_agents[name]
 
+        # Checkpoint state
+        cp_file = d / "data" / "checkpoints.json"
+        checkpoint = None
+        if cp_file.exists():
+            cp_data = json.loads(cp_file.read_text())
+            cp_hit = cp_data.get("checkpoints_hit", [])
+            if cp_hit and not running:
+                last_cp = max(cp_hit)
+                checkpoint = {
+                    "threshold": last_cp,
+                    "label": f"{int(last_cp * 100)}%",
+                    "checkpoints_hit": cp_hit,
+                }
+
         result.append({
             "name": name,
             "running": running,
@@ -430,6 +502,7 @@ def api_agents_status():
             "started_at": started_at,
             "cost": round(cost, 4),
             "budget": agent_budget,
+            "checkpoint": checkpoint,
         })
 
     return result
@@ -533,10 +606,52 @@ NOTION_API = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
 
 
-def _notion_headers() -> dict:
-    token = os.environ.get("NOTION_TOKEN", "")
+def _load_notion_config() -> dict:
+    """Load Notion config from config.yaml, falling back to env vars."""
+    cfg = load_config()
+    notion = cfg.get("notion", {}) or {}
+    token = notion.get("token", "") or os.environ.get("NOTION_TOKEN", "")
+    root_page_id = notion.get("root_page_id", "") or os.environ.get("NOTION_PAGE_ID", "")
+    hub_database_id = notion.get("hub_database_id", "")
+    return {
+        "token": token,
+        "root_page_id": root_page_id,
+        "hub_database_id": hub_database_id,
+    }
+
+
+def _save_notion_config(notion_cfg: dict):
+    """Upsert the notion: block in config.yaml, preserving other content."""
+    cfg_path = ROOT / "config.yaml"
+    text = cfg_path.read_text() if cfg_path.exists() else ""
+
+    # Build the YAML snippet for the notion block
+    lines = ["notion:"]
+    for key in ("token", "root_page_id", "hub_database_id"):
+        val = notion_cfg.get(key, "")
+        lines.append(f'  {key}: "{val}"')
+    snippet = "\n".join(lines)
+
+    # Replace existing notion: block or append
+    if re.search(r"^notion:\s*$", text, re.MULTILINE):
+        # Remove the old notion block (notion: line + indented lines following it)
+        text = re.sub(
+            r"^notion:\s*\n(?:[ \t]+\S.*\n?)*",
+            snippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + snippet + "\n"
+
+    cfg_path.write_text(text)
+
+
+def _notion_headers(token: str = None) -> dict:
     if not token:
-        raise HTTPException(500, "NOTION_TOKEN not set")
+        token = _load_notion_config()["token"]
+    if not token:
+        raise HTTPException(500, "Notion token not configured")
     return {
         "Authorization": f"Bearer {token}",
         "Notion-Version": NOTION_VERSION,
@@ -702,9 +817,258 @@ def _notion_update_page(page_id: str, title: str, blocks: list[dict], headers: d
     return {"id": page_id}
 
 
+# --- Notion database hub ---
+
+NOTION_DB_SCHEMA = {
+    "Name": {"title": {}},
+    "Status": {
+        "select": {
+            "options": [
+                {"name": "Not Started", "color": "default"},
+                {"name": "In Progress", "color": "blue"},
+                {"name": "Checkpoint", "color": "yellow"},
+                {"name": "Completed", "color": "green"},
+            ]
+        }
+    },
+    "Budget Spent": {"number": {"format": "dollar"}},
+    "Budget Total": {"number": {"format": "dollar"}},
+    "Cycles": {"number": {"format": "number"}},
+    "Last Published": {"date": {}},
+}
+
+
+def _notion_ensure_hub_database(headers: dict, notion_cfg: dict) -> str:
+    """Return the hub database ID, creating it if needed."""
+    db_id = notion_cfg.get("hub_database_id", "")
+
+    # Verify existing database still exists
+    if db_id:
+        try:
+            r = http_requests.get(
+                f"{NOTION_API}/databases/{db_id}",
+                headers=headers,
+                timeout=15,
+            )
+            if r.status_code == 200 and not r.json().get("archived"):
+                return db_id
+        except Exception:
+            pass
+        # Database gone — will recreate
+        db_id = ""
+
+    # Create new database under root_page_id
+    root_page_id = notion_cfg.get("root_page_id", "")
+    if not root_page_id:
+        raise HTTPException(500, "Notion root_page_id not configured")
+
+    body = {
+        "parent": {"page_id": root_page_id},
+        "is_inline": True,
+        "title": [{"type": "text", "text": {"content": "Deepshika Research Hub"}}],
+        "properties": NOTION_DB_SCHEMA,
+    }
+    r = http_requests.post(
+        f"{NOTION_API}/databases",
+        headers=headers,
+        json=body,
+        timeout=30,
+    )
+    r.raise_for_status()
+    db = r.json()
+    db_id = db["id"]
+
+    # Save back to config
+    notion_cfg["hub_database_id"] = db_id
+    _save_notion_config(notion_cfg)
+
+    return db_id
+
+
+def _notion_find_topic_row(db_id: str, topic_name: str, headers: dict) -> str | None:
+    """Find an existing non-archived row by title. Returns page_id or None."""
+    body = {
+        "filter": {
+            "property": "Name",
+            "title": {"equals": topic_name},
+        }
+    }
+    r = http_requests.post(
+        f"{NOTION_API}/databases/{db_id}/query",
+        headers=headers,
+        json=body,
+        timeout=15,
+    )
+    r.raise_for_status()
+    for row in r.json().get("results", []):
+        if not row.get("archived"):
+            return row["id"]
+    return None
+
+
+def _notion_upsert_topic_row(
+    db_id: str,
+    topic_name: str,
+    status: str,
+    budget_spent: float,
+    budget_total: float,
+    cycles: int,
+    headers: dict,
+    existing_row_id: str = None,
+) -> dict:
+    """Create or update a database row with topic metadata."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    properties = {
+        "Name": {"title": [{"text": {"content": topic_name}}]},
+        "Status": {"select": {"name": status}},
+        "Budget Spent": {"number": round(budget_spent, 4)},
+        "Budget Total": {"number": round(budget_total, 2)},
+        "Cycles": {"number": cycles},
+        "Last Published": {"date": {"start": now_iso}},
+    }
+
+    if existing_row_id:
+        r = http_requests.patch(
+            f"{NOTION_API}/pages/{existing_row_id}",
+            headers=headers,
+            json={"properties": properties},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()
+    else:
+        body = {
+            "parent": {"database_id": db_id},
+            "properties": properties,
+        }
+        r = http_requests.post(
+            f"{NOTION_API}/pages",
+            headers=headers,
+            json=body,
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+def _compute_topic_status(name: str, paths: dict) -> str:
+    """Determine the current status of a topic."""
+    # Running?
+    if name in _running_agents:
+        entry = _running_agents[name]
+        if entry["process"].poll() is None:
+            return "In Progress"
+
+    # Checkpoint?
+    cp_file = paths["data_dir"] / "checkpoints.json"
+    if cp_file.exists():
+        cp_data = json.loads(cp_file.read_text())
+        if cp_data.get("checkpoints_hit"):
+            return "Checkpoint"
+
+    # Any cycles run?
+    if get_cycle_count(paths) == 0:
+        return "Not Started"
+
+    return "Completed"
+
+
+# --- Notion config API endpoints ---
+
+@app.get("/api/notion/config")
+def api_get_notion_config():
+    """Return Notion config with masked token."""
+    cfg = _load_notion_config()
+    token = cfg.get("token", "")
+    masked = ""
+    if token:
+        masked = token[:8] + "..." + token[-4:] if len(token) > 12 else "***"
+    return {
+        "token_masked": masked,
+        "token_set": bool(token),
+        "root_page_id": cfg.get("root_page_id", ""),
+        "hub_database_id": cfg.get("hub_database_id", ""),
+    }
+
+
+@app.put("/api/notion/config")
+def api_put_notion_config(body: NotionConfig):
+    """Save Notion token and root_page_id to config.yaml."""
+    existing = _load_notion_config()
+    notion_cfg = {
+        "token": body.token if body.token else existing.get("token", ""),
+        "root_page_id": body.root_page_id if body.root_page_id else existing.get("root_page_id", ""),
+        "hub_database_id": existing.get("hub_database_id", ""),
+    }
+    _save_notion_config(notion_cfg)
+    return {"status": "saved"}
+
+
+# --- LLM config helpers & endpoints ---
+
+def _load_llm_config() -> dict:
+    """Load LLM config from config.yaml, falling back to env vars."""
+    cfg = load_config()
+    llm = cfg.get("llm", {}) or {}
+    provider = llm.get("provider", "") or os.environ.get("LLM_PROVIDER", "")
+    api_key = llm.get("api_key", "") or os.environ.get("LLM_API_KEY", "") or os.environ.get("OPENROUTER_API_KEY", "")
+    return {"provider": provider, "api_key": api_key}
+
+
+def _save_llm_config(llm_cfg: dict):
+    """Upsert the llm: block in config.yaml, preserving other content."""
+    cfg_path = ROOT / "config.yaml"
+    text = cfg_path.read_text() if cfg_path.exists() else ""
+
+    lines = ["llm:"]
+    for key in ("provider", "api_key"):
+        val = llm_cfg.get(key, "")
+        lines.append(f'  {key}: "{val}"')
+    snippet = "\n".join(lines)
+
+    if re.search(r"^llm:\s*$", text, re.MULTILINE):
+        text = re.sub(
+            r"^llm:\s*\n(?:[ \t]+\S.*\n?)*",
+            snippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + snippet + "\n"
+
+    cfg_path.write_text(text)
+
+
+@app.get("/api/llm/config")
+def api_get_llm_config():
+    """Return LLM config with masked api_key."""
+    cfg = _load_llm_config()
+    api_key = cfg.get("api_key", "")
+    masked = ""
+    if api_key:
+        masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+    return {
+        "provider": cfg.get("provider", ""),
+        "api_key_masked": masked,
+        "api_key_set": bool(api_key),
+    }
+
+
+@app.put("/api/llm/config")
+def api_put_llm_config(body: LlmConfig):
+    """Save LLM provider and api_key to config.yaml."""
+    existing = _load_llm_config()
+    llm_cfg = {
+        "provider": body.provider if body.provider else existing.get("provider", ""),
+        "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
+    }
+    _save_llm_config(llm_cfg)
+    return {"status": "saved"}
+
+
 @app.post("/api/topics/{name}/publish-to-notion")
 def api_publish_to_notion(name: str):
-    """Publish all research .md files to Notion under a topic parent page."""
+    """Publish research files to Notion, organizing under a database hub row."""
     paths = _paths_for(name)
     research_dir = paths["research_dir"]
     if not research_dir.exists():
@@ -714,11 +1078,34 @@ def api_publish_to_notion(name: str):
     if not files:
         raise HTTPException(404, "No research files to publish")
 
-    root_parent_id = os.environ.get("NOTION_PAGE_ID", "")
-    if not root_parent_id:
-        raise HTTPException(500, "NOTION_PAGE_ID not set")
+    notion_cfg = _load_notion_config()
+    if not notion_cfg["token"]:
+        raise HTTPException(500, "Notion token not configured")
+    if not notion_cfg["root_page_id"]:
+        raise HTTPException(500, "Notion root_page_id not configured")
 
-    headers = _notion_headers()
+    headers = _notion_headers(notion_cfg["token"])
+
+    # Ensure hub database exists
+    db_id = _notion_ensure_hub_database(headers, notion_cfg)
+
+    # Gather topic metadata
+    costs_file = paths["data_dir"] / "costs.json"
+    ledger = _load_ledger(costs_file) if costs_file.exists() else {"total_usd": 0.0}
+    budget_spent = ledger.get("total_usd", 0.0)
+    agent_budget = _load_agent_budget(name)
+    budget_total = (agent_budget or {}).get("max_total_usd", 0) or load_config().get("budget", {}).get("max_total_usd", 10)
+    cycles = get_cycle_count(paths)
+    status = _compute_topic_status(name, paths)
+
+    # Find or create the topic database row
+    existing_row_id = _notion_find_topic_row(db_id, name, headers)
+    row = _notion_upsert_topic_row(
+        db_id, name, status, budget_spent, budget_total, cycles,
+        headers, existing_row_id=existing_row_id,
+    )
+    topic_row_id = row["id"]
+    topic_row_url = row.get("url", f"https://notion.so/{topic_row_id.replace('-', '')}")
 
     # Load publish state
     publish_state_path = paths["data_dir"] / "notion_publish.json"
@@ -727,29 +1114,6 @@ def api_publish_to_notion(name: str):
         publish_state = json.loads(publish_state_path.read_text())
 
     now = datetime.now(timezone.utc).isoformat()
-
-    # Ensure a topic-level parent page exists
-    topic_page_id = publish_state.get("_topic_page_id")
-    topic_page_url = publish_state.get("_topic_page_url")
-    if topic_page_id:
-        # Verify it still exists
-        try:
-            r = http_requests.get(
-                f"{NOTION_API}/pages/{topic_page_id}",
-                headers=headers,
-                timeout=15,
-            )
-            if r.status_code == 404 or r.json().get("archived"):
-                topic_page_id = None
-        except Exception:
-            topic_page_id = None
-
-    if not topic_page_id:
-        page = _notion_create_page(root_parent_id, name, [], headers)
-        topic_page_id = page["id"]
-        topic_page_url = page.get("url", f"https://notion.so/{topic_page_id.replace('-', '')}")
-        publish_state["_topic_page_id"] = topic_page_id
-        publish_state["_topic_page_url"] = topic_page_url
 
     results = []
 
@@ -770,11 +1134,12 @@ def api_publish_to_notion(name: str):
                     page_id = existing["page_id"]
                     url = existing.get("url", f"https://notion.so/{page_id.replace('-', '')}")
                 except http_requests.HTTPError:
-                    page = _notion_create_page(topic_page_id, title, blocks, headers)
+                    # Page deleted or inaccessible — create new under row
+                    page = _notion_create_page(topic_row_id, title, blocks, headers)
                     page_id = page["id"]
                     url = page.get("url", f"https://notion.so/{page_id.replace('-', '')}")
             else:
-                page = _notion_create_page(topic_page_id, title, blocks, headers)
+                page = _notion_create_page(topic_row_id, title, blocks, headers)
                 page_id = page["id"]
                 url = page.get("url", f"https://notion.so/{page_id.replace('-', '')}")
 
@@ -787,12 +1152,19 @@ def api_publish_to_notion(name: str):
         except http_requests.HTTPError as e:
             results.append({"file": file_key, "status": "error", "error": str(e)})
 
-    # Save publish state
+    # Save publish state with hub metadata
+    publish_state["_topic_row_id"] = topic_row_id
+    publish_state["_topic_row_url"] = topic_row_url
+    publish_state["_hub_database_id"] = db_id
     publish_state_path.write_text(json.dumps(publish_state, indent=2))
+
+    # Build database URL
+    database_url = f"https://notion.so/{db_id.replace('-', '')}"
 
     return {
         "published_at": now,
-        "topic_url": topic_page_url,
+        "topic_url": topic_row_url,
+        "database_url": database_url,
         "results": results,
     }
 
@@ -803,7 +1175,7 @@ def api_notion_status(name: str):
     paths = _paths_for(name)
     publish_state_path = paths["data_dir"] / "notion_publish.json"
     if not publish_state_path.exists():
-        return {"published": False, "published_at": None, "topic_url": None, "pages": []}
+        return {"published": False, "published_at": None, "topic_url": None, "database_url": None, "pages": []}
     pub = json.loads(publish_state_path.read_text())
     timestamps = [
         v.get("published_at", "")
@@ -816,12 +1188,63 @@ def api_notion_status(name: str):
         for k, v in pub.items()
         if isinstance(v, dict) and not k.startswith("_")
     ]
+    # Prefer new row URL, fall back to legacy page URL
+    topic_url = pub.get("_topic_row_url") or pub.get("_topic_page_url")
+    hub_db_id = pub.get("_hub_database_id", "")
+    database_url = f"https://notion.so/{hub_db_id.replace('-', '')}" if hub_db_id else None
     return {
         "published": True,
         "published_at": latest,
-        "topic_url": pub.get("_topic_page_url"),
+        "topic_url": topic_url,
+        "database_url": database_url,
         "pages": pages,
     }
+
+
+@app.post("/api/notion/publish-all")
+def api_publish_all_topics():
+    """Sync all topics to the hub database (metadata only, no page content)."""
+    notion_cfg = _load_notion_config()
+    if not notion_cfg["token"]:
+        raise HTTPException(500, "Notion token not configured")
+    if not notion_cfg["root_page_id"]:
+        raise HTTPException(500, "Notion root_page_id not configured")
+
+    headers = _notion_headers(notion_cfg["token"])
+    db_id = _notion_ensure_hub_database(headers, notion_cfg)
+
+    topics_dir = ROOT / "topics"
+    if not topics_dir.exists():
+        return {"synced": 0, "topics": []}
+
+    results = []
+    for d in sorted(topics_dir.iterdir()):
+        if not d.is_dir():
+            continue
+        name = d.name
+        try:
+            paths = _paths_for(name)
+        except HTTPException:
+            continue
+
+        costs_file = paths["data_dir"] / "costs.json"
+        ledger = _load_ledger(costs_file) if costs_file.exists() else {"total_usd": 0.0}
+        budget_spent = ledger.get("total_usd", 0.0)
+        agent_budget = _load_agent_budget(name)
+        budget_total = (agent_budget or {}).get("max_total_usd", 0) or load_config().get("budget", {}).get("max_total_usd", 10)
+        cycles = get_cycle_count(paths)
+        status = _compute_topic_status(name, paths)
+
+        existing_row_id = _notion_find_topic_row(db_id, name, headers)
+        row = _notion_upsert_topic_row(
+            db_id, name, status, budget_spent, budget_total, cycles,
+            headers, existing_row_id=existing_row_id,
+        )
+        results.append({"topic": name, "status": status, "row_url": row.get("url", "")})
+        time.sleep(0.35)  # Respect Notion rate limits
+
+    database_url = f"https://notion.so/{db_id.replace('-', '')}"
+    return {"synced": len(results), "database_url": database_url, "topics": results}
 
 
 # --- Shutdown hook ---

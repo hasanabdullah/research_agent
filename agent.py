@@ -12,7 +12,7 @@ import click
 import yaml
 from dotenv import load_dotenv
 
-from costs import check_budget, get_summary, record_call
+from costs import check_budget, get_summary, get_total_usd, record_call
 from llm import get_client, resolve_model
 from supervisor import review_proposal
 from tools import TOOL_DEFINITIONS, dispatch_tool, reset_web_counters, set_paths, _resolve_file_path
@@ -1318,6 +1318,22 @@ def dashboard(port):
     uvicorn.run(app, host="127.0.0.1", port=port)
 
 
+def _load_checkpoints(topic_name: str) -> set:
+    """Load already-crossed checkpoint thresholds from disk."""
+    cp_file = ROOT / "topics" / topic_name / "data" / "checkpoints.json"
+    if cp_file.exists():
+        data = json.loads(cp_file.read_text())
+        return set(data.get("checkpoints_hit", []))
+    return set()
+
+
+def _save_checkpoints(topic_name: str, checkpoints_hit: set):
+    """Persist crossed checkpoint thresholds to disk."""
+    cp_file = ROOT / "topics" / topic_name / "data" / "checkpoints.json"
+    cp_file.parent.mkdir(parents=True, exist_ok=True)
+    cp_file.write_text(json.dumps({"checkpoints_hit": sorted(checkpoints_hit)}))
+
+
 @cli.command("run-topic")
 @click.argument("topic_name")
 @click.option("--cycles", default=0, help="0 = run until budget exhausted")
@@ -1330,6 +1346,12 @@ def run_topic(topic_name, cycles, delay):
         return
 
     config = load_agent_config(topic_name)
+    paths = resolve_topic_paths(config)
+
+    # Checkpoint setup
+    review_thresholds = config.get("review_checkpoints", [0.33, 0.66])
+    checkpoints_hit = _load_checkpoints(topic_name)
+
     cycle_count = 0
     while True:
         result = run_cycle(config)
@@ -1338,6 +1360,41 @@ def run_topic(topic_name, cycles, delay):
             break
         if cycles > 0 and cycle_count >= cycles:
             break
+
+        # Budget checkpoint check
+        if review_thresholds:
+            total_spent = get_total_usd(paths["costs_file"])
+            max_total = config.get("budget", {}).get("max_total_usd", 10.0)
+            pct = total_spent / max_total if max_total > 0 else 0
+
+            stop = False
+            for threshold in sorted(review_thresholds):
+                if pct >= threshold and threshold not in checkpoints_hit:
+                    checkpoints_hit.add(threshold)
+                    _save_checkpoints(topic_name, checkpoints_hit)
+
+                    click.echo(f"\n{'='*60}")
+                    click.echo(f"CHECKPOINT: {int(threshold*100)}% of budget used (${total_spent:.2f} / ${max_total:.2f})")
+                    click.echo(f"Review research output, then restart to continue.")
+                    click.echo(f"{'='*60}\n")
+
+                    # Log checkpoint in cycles.jsonl
+                    checkpoint_record = {
+                        "cycle": result.get("cycle", cycle_count),
+                        "action": "checkpoint_review",
+                        "summary": f"Budget checkpoint at {int(threshold*100)}%: ${total_spent:.2f} / ${max_total:.2f} spent",
+                        "applied": [],
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "cost_after": total_spent,
+                    }
+                    log_cycle(checkpoint_record, paths)
+
+                    stop = True
+                    break
+
+            if stop:
+                break
+
         time.sleep(delay)
 
 

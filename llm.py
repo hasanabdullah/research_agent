@@ -1,5 +1,8 @@
-"""LLM client factory — reads provider/key from environment."""
+"""LLM client factory — reads provider/key from config.yaml, falls back to env."""
 import os
+from pathlib import Path
+
+import yaml
 from openai import OpenAI
 
 PROVIDER_URLS = {
@@ -8,13 +11,29 @@ PROVIDER_URLS = {
 }
 
 
+def _load_llm_config() -> dict:
+    """Read the llm: block from config.yaml (provider + api_key)."""
+    cfg_path = Path(__file__).parent / "config.yaml"
+    if cfg_path.exists():
+        cfg = yaml.safe_load(cfg_path.read_text()) or {}
+        return cfg.get("llm", {}) or {}
+    return {}
+
+
 def get_provider():
-    return os.environ.get("LLM_PROVIDER", "openrouter").lower()
+    llm_cfg = _load_llm_config()
+    provider = llm_cfg.get("provider", "") or os.environ.get("LLM_PROVIDER", "openrouter")
+    return provider.lower()
 
 
 def get_client():
     provider = get_provider()
-    api_key = os.environ.get("LLM_API_KEY", "") or os.environ.get("OPENROUTER_API_KEY", "")
+    llm_cfg = _load_llm_config()
+    api_key = (
+        llm_cfg.get("api_key", "")
+        or os.environ.get("LLM_API_KEY", "")
+        or os.environ.get("OPENROUTER_API_KEY", "")
+    )
     base_url = PROVIDER_URLS.get(provider)
     if base_url:
         return OpenAI(base_url=base_url, api_key=api_key)

@@ -35,6 +35,8 @@
   .topic-card .running-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: inline-block; flex-shrink: 0; animation: pulse 1.5s ease-in-out infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
   .topic-card .meta { font-size: 11px; color: #9ca3af; margin-top: 3px; display: flex; gap: 10px; }
+  .topic-card:hover .delete-btn { opacity: 1 !important; }
+  .topic-card .delete-btn:hover { color: var(--red) !important; }
   #new-topic-btn { margin: 10px; padding: 9px; background: transparent; border: 1px dashed #505050; border-radius: 8px; color: #9ca3af; cursor: pointer; text-align: center; font-size: 12px; font-weight: 500; transition: all 0.15s ease; }
   #new-topic-btn:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -103,6 +105,9 @@
   .save-btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 500; cursor: pointer; margin-top: 8px; transition: all 0.15s ease; box-shadow: var(--shadow-sm); }
   .save-btn:hover { opacity: 0.9; box-shadow: var(--shadow); }
   .save-btn.saved { background: var(--green); }
+  .config-section input[type="text"], .config-section input[type="password"] { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 13px; padding: 8px 12px; box-shadow: var(--shadow-sm); transition: border-color 0.15s ease; margin-bottom: 8px; }
+  .config-section input[type="text"]:focus, .config-section input[type="password"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 
   /* Modal */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; }
@@ -139,6 +144,7 @@
     <div class="tab active" data-tab="insights" onclick="switchTab('insights')">Insights</div>
     <div class="tab" data-tab="monitor" onclick="switchTab('monitor')">Monitor</div>
     <div class="tab" data-tab="research" onclick="switchTab('research')">Research Output</div>
+    <div class="tab" data-tab="mission" onclick="switchTab('mission')">Mission</div>
     <div class="tab" data-tab="configure" onclick="switchTab('configure')">Configure</div>
     <div id="agent-control" style="display:flex;align-items:center;gap:8px;margin-left:4px"></div>
   </div>
@@ -168,8 +174,10 @@ async function load() {
   renderSidebar();
   // Auto-select active topic
   if (!state.selected && state.config.active_topic) {
-    selectTopic(state.config.active_topic);
+    const exists = state.topics.some(t => t.name === state.config.active_topic);
+    if (exists) { selectTopic(state.config.active_topic); return; }
   }
+  if (!state.selected) renderWelcome();
   manageAutoRefresh();
 }
 
@@ -199,20 +207,42 @@ async function refreshData() {
 
 function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 
+function renderWelcome() {
+  const el = document.getElementById('content');
+  const hasTopics = state.topics.length > 0;
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;text-align:center">
+      <div style="font-size:28px;font-weight:700;letter-spacing:-0.5px">Welcome to Deepshika</div>
+      <div style="color:var(--text2);font-size:15px;max-width:400px">
+        ${hasTopics
+          ? 'Select an agent from the sidebar to get started.'
+          : 'Create your first research agent to get started. You can configure your LLM API key in the Configure tab.'}
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="save-btn" onclick="showCreateModal()" style="font-size:14px;padding:10px 24px;margin:0">+ New Agent</button>
+        <button class="save-btn" onclick="switchTab('configure')" style="font-size:14px;padding:10px 24px;margin:0;background:var(--bg3);color:var(--text);border:1px solid var(--border)">Configure</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderSidebar() {
   const el = document.getElementById('topic-list');
   el.innerHTML = state.topics.map(t => {
     const n = esc(t.name);
     return `
     <div class="topic-card ${state.selected === t.name ? 'selected' : ''}" onclick="selectTopic('${n}')">
-      <div class="name">
-        ${t.running ? '<span class="running-dot" title="Running"></span>' : (t.active ? '<span class="active-dot"></span>' : '')}
-        ${escHtml(t.name)}
+      <div class="name" style="justify-content:space-between">
+        <span style="display:flex;align-items:center;gap:6px">
+          ${t.running ? '<span class="running-dot" title="Running"></span>' : (t.active ? '<span class="active-dot"></span>' : '')}
+          ${escHtml(t.name)}
+        </span>
+        <span class="delete-btn" title="Delete agent" onclick="event.stopPropagation();confirmDelete('${n}')" style="opacity:0;color:#9ca3af;font-size:14px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x2715;</span>
       </div>
       <div class="meta">
         <span>${t.cycles} cycles</span>
         <span>$${t.cost.toFixed(4)}</span>
-        ${t.running ? '<span style="color:var(--green)">running</span>' : ''}
+        ${t.running ? '<span style="color:var(--green)">running</span>' : (t.checkpoint ? '<span style="color:var(--yellow)">checkpoint</span>' : '')}
       </div>
     </div>
   `}).join('');
@@ -257,6 +287,11 @@ function renderAgentControl() {
       <span style="color:var(--green);font-size:12px">Running</span>
       <button style="font-size:11px;background:none;border:1px solid var(--red);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--red)" onmouseover="this.style.background='var(--red)';this.style.color='#fff'" onmouseout="this.style.background='none';this.style.color='var(--red)'" onclick="stopAgent('${n}')">Stop</button>
     `;
+  } else if (t.checkpoint) {
+    el.innerHTML = `
+      <span style="font-size:11px;background:var(--yellow);color:#000;border-radius:6px;padding:3px 8px;font-weight:600">Paused — ${t.checkpoint.label} checkpoint</span>
+      <button style="font-size:11px;background:var(--green);border:1px solid var(--green);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="startAgent('${n}')">Resume</button>
+    `;
   } else {
     el.innerHTML = `<button style="font-size:11px;background:var(--green);border:1px solid var(--green);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="startAgent('${n}')">Start</button>`;
   }
@@ -281,11 +316,17 @@ function switchTab(tab) {
     clearInterval(researchPollTimer);
     researchPollTimer = null;
   }
-  if (!state.selected) return;
+  // Configure tab works without a topic selected
+  if (tab === 'configure') { renderConfigure(); return; }
+  // Other tabs need a topic
+  if (!state.selected) {
+    document.getElementById('content').innerHTML = '<div id="empty-state">Select an agent from the sidebar or create a new one</div>';
+    return;
+  }
   if (tab === 'insights') renderInsights();
   else if (tab === 'monitor') renderMonitor();
   else if (tab === 'research') renderResearch();
-  else if (tab === 'configure') renderConfigure();
+  else if (tab === 'mission') renderMission();
 }
 
 // --- Insights ---
@@ -308,13 +349,16 @@ async function renderInsights() {
   const hasResearch = files.length > 0 && files.some(f => f.size > 0);
 
   const notionBtnLabel = notionStatus.published ? 'Re-publish' : 'Publish to Notion';
+  const hubLinkHtml = notionStatus.database_url
+    ? `<a href="${notionStatus.database_url}" target="_blank" style="color:var(--accent);font-weight:600;font-size:13px;margin-right:12px">Notion Hub</a>`
+    : '';
   const notionLinksHtml = notionStatus.pages && notionStatus.pages.length > 0
     ? `<div id="notion-links" class="identity-section" style="margin-top:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <h3 style="margin:0">Notion</h3>
+          <h3 style="margin:0">${hubLinkHtml}Notion</h3>
           <span style="font-size:11px;color:var(--text2)">Published ${formatTimestamp(notionStatus.published_at)}</span>
         </div>
-        ${notionStatus.topic_url ? `<div style="margin-bottom:8px"><a href="${notionStatus.topic_url}" target="_blank" style="color:var(--accent);font-weight:500;font-size:13px">${escHtml(state.selected)} — open in Notion</a></div>` : ''}
+        ${notionStatus.topic_url ? `<div style="margin-bottom:8px"><a href="${notionStatus.topic_url}" target="_blank" style="color:var(--accent);font-weight:500;font-size:13px">${escHtml(state.selected)} — topic row</a></div>` : ''}
         <div style="display:flex;flex-wrap:wrap;gap:6px">${notionStatus.pages.map(p =>
           `<a href="${p.url}" target="_blank" style="display:inline-block;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text);text-decoration:none;font-family:var(--mono)">${escHtml(p.file.replace('.md',''))}</a>`
         ).join('')}</div>
@@ -396,13 +440,16 @@ async function publishToNotion() {
     const ok = result.results.filter(r => r.status === 'ok');
     const errs = result.results.filter(r => r.status === 'error');
 
+    const hubLink = result.database_url
+      ? `<a href="${result.database_url}" target="_blank" style="color:var(--accent);font-weight:600;font-size:13px;margin-right:12px">Notion Hub</a>`
+      : '';
     let html = `<div class="identity-section" style="margin-top:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <h3 style="margin:0">Notion</h3>
+        <h3 style="margin:0">${hubLink}Notion</h3>
         <span style="font-size:11px;color:var(--text2)">Published ${formatTimestamp(result.published_at)}</span>
       </div>`;
     if (result.topic_url) {
-      html += `<div style="margin-bottom:8px"><a href="${result.topic_url}" target="_blank" style="color:var(--accent);font-weight:500;font-size:13px">${escHtml(state.selected)} — open in Notion</a></div>`;
+      html += `<div style="margin-bottom:8px"><a href="${result.topic_url}" target="_blank" style="color:var(--accent);font-weight:500;font-size:13px">${escHtml(state.selected)} — topic row</a></div>`;
     }
     if (ok.length) {
       html += `<div style="display:flex;flex-wrap:wrap;gap:6px">${ok.map(r =>
@@ -447,7 +494,9 @@ async function renderMonitor() {
       <h2 style="font-size:18px">${state.selected}</h2>
       ${isRunning
         ? '<span style="color:var(--green);font-size:13px;display:flex;align-items:center;gap:4px"><span class="running-dot" style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s ease-in-out infinite"></span> Running</span>'
-        : '<span style="color:var(--text2);font-size:13px">Stopped</span>'
+        : (topicData && topicData.checkpoint
+          ? '<span style="color:var(--yellow);font-size:13px;font-weight:600">Paused — ' + topicData.checkpoint.label + ' checkpoint</span>'
+          : '<span style="color:var(--text2);font-size:13px">Stopped</span>')
       }
     </div>
     <div class="stats-grid">
@@ -535,8 +584,8 @@ async function viewFile(name) {
   `;
 }
 
-// --- Configure ---
-async function renderConfigure() {
+// --- Mission ---
+async function renderMission() {
   const el = document.getElementById('content');
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
   const [mission, prompt] = await Promise.all([
@@ -544,28 +593,7 @@ async function renderConfigure() {
     api(`topics/${state.selected}/prompt`)
   ]);
 
-  // Get current per-agent budget
-  const topicData = state.topics.find(t => t.name === state.selected);
-  const agentBudget = topicData && topicData.budget;
-  const globalBudget = state.config.budget || {};
-  const curTotal = (agentBudget && agentBudget.max_total_usd) || globalBudget.max_total_usd || 10;
-  const curDaily = (agentBudget && agentBudget.max_per_day_usd) || globalBudget.max_per_day_usd || 10;
-
   el.innerHTML = `
-    <div class="config-section">
-      <h3>Agent Budget</h3>
-      <div class="budget-form">
-        <div class="budget-field">
-          <label>Total budget ($)</label>
-          <input type="number" id="budget-total" step="0.50" min="0" value="${curTotal}" />
-        </div>
-        <div class="budget-field">
-          <label>Daily limit ($)</label>
-          <input type="number" id="budget-daily" step="0.50" min="0" value="${curDaily}" />
-        </div>
-        <button class="save-btn" onclick="saveBudget(this)">Save Budget</button>
-      </div>
-    </div>
     <div class="config-section">
       <h3>mission.md</h3>
       <textarea id="mission-editor">${escHtml(mission.content)}</textarea>
@@ -577,6 +605,129 @@ async function renderConfigure() {
       <button class="save-btn" onclick="savePrompt(this)">Save Parameters</button>
     </div>
   `;
+}
+
+// --- Configure ---
+async function renderConfigure() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
+  const [notionCfg, llmCfg] = await Promise.all([
+    fetch('/api/notion/config').then(r => r.json()).catch(() => ({ token_set: false, token_masked: '', root_page_id: '', hub_database_id: '' })),
+    fetch('/api/llm/config').then(r => r.json()).catch(() => ({ provider: '', api_key_set: false, api_key_masked: '' }))
+  ]);
+
+  // Get current per-agent budget (only if a topic is selected)
+  let budgetHtml = '';
+  if (state.selected) {
+    const topicData = state.topics.find(t => t.name === state.selected);
+    const agentBudget = topicData && topicData.budget;
+    const globalBudget = state.config.budget || {};
+    const curTotal = (agentBudget && agentBudget.max_total_usd) || globalBudget.max_total_usd || 10;
+    const curDaily = (agentBudget && agentBudget.max_per_day_usd) || globalBudget.max_per_day_usd || 10;
+    budgetHtml = `
+    <div class="config-section">
+      <h3>Agent Budget — ${escHtml(state.selected)}</h3>
+      <div class="budget-form">
+        <div class="budget-field">
+          <label>Total budget ($)</label>
+          <input type="number" id="budget-total" step="0.50" min="0" value="${curTotal}" />
+        </div>
+        <div class="budget-field">
+          <label>Daily limit ($)</label>
+          <input type="number" id="budget-daily" step="0.50" min="0" value="${curDaily}" />
+        </div>
+        <button class="save-btn" onclick="saveBudget(this)">Save Budget</button>
+      </div>
+    </div>`;
+  }
+
+  const notionConnected = notionCfg.token_set && notionCfg.root_page_id;
+  const statusDot = notionConnected
+    ? '<span class="status-dot" style="background:var(--green)"></span>Connected'
+    : '<span class="status-dot" style="background:var(--red)"></span>Not configured';
+  const hubLink = notionCfg.hub_database_id
+    ? `<a href="https://notion.so/${notionCfg.hub_database_id.replace(/-/g, '')}" target="_blank" style="color:var(--accent);font-size:12px;margin-left:12px">Open Hub Database</a>`
+    : '';
+
+  const llmProviders = ['openrouter', 'anthropic', 'openai'];
+  const curProvider = (llmCfg.provider || '').toLowerCase();
+  const providerOptions = llmProviders.map(p =>
+    `<option value="${p}" ${p === curProvider ? 'selected' : ''}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`
+  ).join('');
+
+  el.innerHTML = `
+    ${budgetHtml}
+    <div class="config-section">
+      <h3>LLM Configuration</h3>
+      <div style="margin-bottom:8px">
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Provider</label>
+        <select id="llm-provider" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;box-shadow:var(--shadow-sm);">
+          <option value="">Select provider...</option>
+          ${providerOptions}
+        </select>
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Key</label>
+        <input type="password" id="llm-api-key" placeholder="${llmCfg.api_key_masked || 'Enter API key...'}" />
+      </div>
+      <button class="save-btn" id="llm-config-btn" onclick="saveLlmConfig(this)">Save LLM Config</button>
+    </div>
+    <div class="config-section">
+      <h3>Notion Integration</h3>
+      <div style="display:flex;align-items:center;margin-bottom:12px;font-size:13px">
+        ${statusDot}${hubLink}
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Token</label>
+        <input type="password" id="notion-token" placeholder="${notionCfg.token_masked || 'ntn_...'}" />
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Root Page ID</label>
+        <input type="text" id="notion-root-page" value="${escHtml(notionCfg.root_page_id || '')}" placeholder="Paste the Notion page ID" />
+      </div>
+      <button class="save-btn" id="notion-config-btn" onclick="saveNotionConfig(this)">Save Notion Config</button>
+    </div>
+  `;
+}
+
+async function saveNotionConfig(btn) {
+  const token = document.getElementById('notion-token').value;
+  const rootPageId = document.getElementById('notion-root-page').value.trim();
+  const body = {};
+  if (token) body.token = token;
+  if (rootPageId) body.root_page_id = rootPageId;
+  try {
+    await fetch('/api/notion/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    btn.textContent = 'Saved!'; btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'Save Notion Config'; btn.classList.remove('saved'); }, 1500);
+    renderConfigure();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+async function saveLlmConfig(btn) {
+  const provider = document.getElementById('llm-provider').value;
+  const apiKey = document.getElementById('llm-api-key').value;
+  const body = {};
+  if (provider) body.provider = provider;
+  if (apiKey) body.api_key = apiKey;
+  try {
+    await fetch('/api/llm/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    btn.textContent = 'Saved!'; btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'Save LLM Config'; btn.classList.remove('saved'); }, 1500);
+    renderConfigure();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
 }
 
 async function saveBudget(btn) {
@@ -612,6 +763,40 @@ async function savePrompt(btn) {
   });
   btn.textContent = 'Saved!'; btn.classList.add('saved');
   setTimeout(() => { btn.textContent = 'Save Parameters'; btn.classList.remove('saved'); }, 1500);
+}
+
+// --- Delete ---
+function confirmDelete(name) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>Delete Agent</h2>
+      <p style="color:var(--text2);margin-bottom:16px;font-size:14px;line-height:1.5">
+        Are you sure you want to delete <strong style="color:var(--text)">${escHtml(name)}</strong>?
+        This will permanently remove the agent, all research output, and cost history.
+      </p>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+        <button class="btn-primary" style="background:var(--red)" onclick="deleteTopic('${esc(name)}')">Delete</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+async function deleteTopic(name) {
+  try {
+    await api(`topics/${name}`, { method: 'DELETE' });
+    document.querySelector('.modal-overlay').remove();
+    if (state.selected === name) {
+      state.selected = null;
+      document.getElementById('agent-control').innerHTML = '';
+    }
+    await load();
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
+  }
 }
 
 // --- Create modal ---
@@ -655,13 +840,18 @@ async function createTopic() {
   const body = { name, description: desc };
   if (!isNaN(maxTotal)) body.max_total_usd = maxTotal;
   if (!isNaN(maxDaily)) body.max_per_day_usd = maxDaily;
-  await api('topics', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  });
-  document.querySelector('.modal-overlay').remove();
-  await load();
-  selectTopic(name);
+  try {
+    await api('topics', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    document.querySelector('.modal-overlay').remove();
+    await load();
+    state.tab = 'mission';
+    selectTopic(name);
+  } catch (e) {
+    alert('Failed to create agent: ' + e.message);
+  }
 }
 
 // --- Markdown renderer ---

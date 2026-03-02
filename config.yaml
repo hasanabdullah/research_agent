@@ -35,3 +35,12 @@ modifiable_files:
 research_dir: data/research
 
 active_topic: micro-saas-opportunities
+
+notion:
+  token: ""
+  root_page_id: ""
+  hub_database_id: ""
+
+llm:
+  provider: ""
+  api_key: ""

@@ -5,3 +5,5 @@ __pycache__/
 dist/
 build/
 .venv/
+topics/*/mission.md
+topics/*/system_prompt.md

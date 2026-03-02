@@ -156,6 +156,18 @@ def generate_agent_scaffold(name: str, description: str, config: dict, verbose: 
                 click.echo(f"  [scaffold] output_files invalid (need >= 2, got {len(result.get('output_files', []))})")
             return None
 
+        # Derive research buckets from output_files
+        buckets = []
+        for i, of in enumerate(result["output_files"], 1):
+            fn = of["filename"]
+            title = fn.replace("_", " ").replace(".md", "").replace(".txt", "").title()
+            buckets.append({
+                "name": f"Phase {i}: {title}",
+                "files": [fn],
+                "notion_page_id": "",
+            })
+        result["research_buckets"] = buckets
+
         # Attach usage info
         usage = response.usage
         result["_usage"] = {

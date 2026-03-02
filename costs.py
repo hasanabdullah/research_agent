@@ -10,9 +10,11 @@ _DEFAULT_COSTS_FILE = _DEFAULT_DATA_DIR / "costs.json"
 
 def _load_ledger(costs_file: Path = None) -> dict:
     costs_file = costs_file or _DEFAULT_COSTS_FILE
+    defaults = {"calls": [], "total_input_tokens": 0, "total_output_tokens": 0, "total_usd": 0.0}
     if costs_file.exists():
-        return json.loads(costs_file.read_text())
-    return {"calls": [], "total_input_tokens": 0, "total_output_tokens": 0, "total_usd": 0.0}
+        data = json.loads(costs_file.read_text())
+        return {**defaults, **data}
+    return defaults
 
 
 def _save_ledger(ledger: dict, costs_file: Path = None):

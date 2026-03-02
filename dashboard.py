@@ -62,6 +62,10 @@ class TextBody(BaseModel):
     content: str
 
 
+class BucketNotionPage(BaseModel):
+    notion_page_id: str
+
+
 class NotionConfig(BaseModel):
     token: str = ""
     root_page_id: str = ""
@@ -70,6 +74,14 @@ class NotionConfig(BaseModel):
 class LlmConfig(BaseModel):
     provider: str = ""
     api_key: str = ""
+
+
+class TopicIdentityUpdate(BaseModel):
+    purpose: str = ""
+
+
+class TopicRename(BaseModel):
+    new_name: str
 
 
 # --- Helpers ---
@@ -99,6 +111,12 @@ def _paths_for(name: str) -> dict:
     }
 
 
+def _research_files(research_dir: Path) -> list[Path]:
+    """Glob both *.md and *.txt research files, deduped and sorted."""
+    files = list(research_dir.glob("*.md")) + list(research_dir.glob("*.txt"))
+    return sorted(set(files), key=lambda f: f.name)
+
+
 def _load_agent_budget(name: str) -> dict | None:
     """Load per-agent budget from agent_config.yaml, or None."""
     cfg_path = ROOT / "topics" / name / "agent_config.yaml"
@@ -106,6 +124,28 @@ def _load_agent_budget(name: str) -> dict | None:
         cfg = yaml.safe_load(cfg_path.read_text()) or {}
         return cfg.get("budget")
     return None
+
+
+def _load_buckets(name: str) -> list[dict]:
+    """Load research_buckets from agent_config.yaml, or empty list."""
+    cfg_path = ROOT / "topics" / name / "agent_config.yaml"
+    if cfg_path.exists():
+        cfg = yaml.safe_load(cfg_path.read_text()) or {}
+        return cfg.get("research_buckets", [])
+    return []
+
+
+def _save_buckets(name: str, buckets: list[dict]):
+    """Write research_buckets back to agent_config.yaml, preserving other keys."""
+    cfg_path = ROOT / "topics" / name / "agent_config.yaml"
+    if cfg_path.exists():
+        cfg = yaml.safe_load(cfg_path.read_text()) or {}
+    else:
+        cfg = {}
+    cfg["research_buckets"] = buckets
+    cfg_path.write_text(
+        yaml.dump(cfg, default_flow_style=False, sort_keys=False)
+    )
 
 
 def _topic_summary(name: str, active_topic: str) -> dict:
@@ -198,7 +238,7 @@ def api_topic_detail(name: str):
     if research_dir.exists():
         research_files = [
             {"name": f.name, "size": f.stat().st_size}
-            for f in sorted(research_dir.glob("*.md"))
+            for f in _research_files(research_dir)
         ]
     return {
         "name": name,
@@ -272,14 +312,24 @@ def api_create_topic(body: TopicCreate):
         "modification_history": [],
     }, indent=2))
 
-    # Write per-agent budget config if provided
+    # Write per-agent config (budget + research buckets)
+    cfg_path = topic_dir / "agent_config.yaml"
+    agent_cfg = {}
+    if cfg_path.exists():
+        agent_cfg = yaml.safe_load(cfg_path.read_text()) or {}
+
     if body.max_total_usd is not None or body.max_per_day_usd is not None:
-        agent_cfg = {"budget": {}}
+        agent_cfg.setdefault("budget", {})
         if body.max_total_usd is not None:
             agent_cfg["budget"]["max_total_usd"] = body.max_total_usd
         if body.max_per_day_usd is not None:
             agent_cfg["budget"]["max_per_day_usd"] = body.max_per_day_usd
-        (topic_dir / "agent_config.yaml").write_text(
+
+    if scaffold and scaffold.get("research_buckets"):
+        agent_cfg["research_buckets"] = scaffold["research_buckets"]
+
+    if agent_cfg:
+        cfg_path.write_text(
             yaml.dump(agent_cfg, default_flow_style=False, sort_keys=False)
         )
 
@@ -335,7 +385,7 @@ def api_research_list(name: str):
         return []
     return [
         {"name": f.name, "size": f.stat().st_size}
-        for f in sorted(research_dir.glob("*.md"))
+        for f in _research_files(research_dir)
     ]
 
 
@@ -346,6 +396,161 @@ def api_research_file(name: str, file: str):
     if not f.exists():
         raise HTTPException(404, f"Research file '{file}' not found")
     return {"name": file, "content": f.read_text()}
+
+
+# --- Research Buckets ---
+
+@app.get("/api/topics/{name}/buckets")
+def api_get_buckets(name: str):
+    """Return enriched bucket list with file sizes and publish status, plus unbucketed files."""
+    paths = _paths_for(name)
+    research_dir = paths["research_dir"]
+    buckets = _load_buckets(name)
+
+    all_files = {}
+    if research_dir.exists():
+        for f in _research_files(research_dir):
+            all_files[f.name] = {"name": f.name, "size": f.stat().st_size}
+
+    if not buckets:
+        return {
+            "has_buckets": False,
+            "buckets": [],
+            "other_files": list(all_files.values()),
+        }
+
+    # Load publish state for status info
+    publish_state_path = paths["data_dir"] / "notion_publish.json"
+    publish_state = {}
+    if publish_state_path.exists():
+        publish_state = json.loads(publish_state_path.read_text())
+
+    bucketed_names = set()
+    enriched = []
+    for i, b in enumerate(buckets):
+        bucket_files = []
+        total_size = 0
+        for fn in b.get("files", []):
+            if fn in all_files:
+                bucket_files.append(all_files[fn])
+                total_size += all_files[fn]["size"]
+                bucketed_names.add(fn)
+            else:
+                bucket_files.append({"name": fn, "size": 0})
+                bucketed_names.add(fn)
+
+        # Check publish status for this bucket
+        pub_info = publish_state.get(f"_bucket_{i}")
+        published_at = pub_info.get("published_at") if isinstance(pub_info, dict) else None
+
+        enriched.append({
+            "index": i,
+            "name": b.get("name", f"Bucket {i+1}"),
+            "files": bucket_files,
+            "total_size": total_size,
+            "notion_page_id": b.get("notion_page_id", ""),
+            "published_at": published_at,
+        })
+
+    other_files = [all_files[fn] for fn in sorted(all_files.keys()) if fn not in bucketed_names]
+
+    return {
+        "has_buckets": True,
+        "buckets": enriched,
+        "other_files": other_files,
+    }
+
+
+@app.put("/api/topics/{name}/buckets/{index}/notion-page")
+def api_update_bucket_notion_page(name: str, index: int, body: BucketNotionPage):
+    """Update one bucket's notion_page_id."""
+    _topic_dir(name)
+    buckets = _load_buckets(name)
+    if index < 0 or index >= len(buckets):
+        raise HTTPException(404, f"Bucket index {index} out of range")
+    buckets[index]["notion_page_id"] = body.notion_page_id
+    _save_buckets(name, buckets)
+    return {"saved": True, "index": index, "notion_page_id": body.notion_page_id}
+
+
+@app.post("/api/topics/{name}/buckets/{index}/publish")
+def api_publish_bucket(name: str, index: int):
+    """Publish only one bucket's files to its notion_page_id."""
+    paths = _paths_for(name)
+    research_dir = paths["research_dir"]
+    buckets = _load_buckets(name)
+    if index < 0 or index >= len(buckets):
+        raise HTTPException(404, f"Bucket index {index} out of range")
+
+    bucket = buckets[index]
+    page_id = bucket.get("notion_page_id", "").strip()
+    if not page_id:
+        raise HTTPException(400, "No Notion page ID set for this bucket")
+
+    notion_cfg = _load_notion_config()
+    if not notion_cfg["token"]:
+        raise HTTPException(500, "Notion token not configured")
+
+    headers = _notion_headers(notion_cfg["token"])
+
+    # Gather content from bucket files
+    parts = []
+    for fn in bucket.get("files", []):
+        fpath = research_dir / fn
+        if fpath.exists():
+            content = fpath.read_text().strip()
+            if content:
+                parts.append(f"## {fn}\n\n{content}")
+
+    if not parts:
+        raise HTTPException(404, "No content in bucket files to publish")
+
+    combined = "\n\n---\n\n".join(parts)
+    blocks = _md_to_notion_blocks(combined)
+    title = bucket.get("name", f"Bucket {index + 1}")
+
+    # Load publish state
+    publish_state_path = paths["data_dir"] / "notion_publish.json"
+    publish_state = {}
+    if publish_state_path.exists():
+        publish_state = json.loads(publish_state_path.read_text())
+
+    now = datetime.now(timezone.utc).isoformat()
+    bucket_key = f"_bucket_{index}"
+    existing = publish_state.get(bucket_key)
+
+    try:
+        if existing and isinstance(existing, dict) and existing.get("page_id"):
+            try:
+                _notion_update_page(existing["page_id"], title, blocks, headers)
+                result_page_id = existing["page_id"]
+                url = existing.get("url", f"https://notion.so/{result_page_id.replace('-', '')}")
+            except http_requests.HTTPError:
+                page = _notion_create_page(page_id, title, blocks, headers)
+                result_page_id = page["id"]
+                url = page.get("url", f"https://notion.so/{result_page_id.replace('-', '')}")
+        else:
+            page = _notion_create_page(page_id, title, blocks, headers)
+            result_page_id = page["id"]
+            url = page.get("url", f"https://notion.so/{result_page_id.replace('-', '')}")
+
+        publish_state[bucket_key] = {
+            "page_id": result_page_id,
+            "url": url,
+            "published_at": now,
+            "bucket_index": index,
+        }
+        publish_state_path.write_text(json.dumps(publish_state, indent=2))
+
+        return {
+            "published_at": now,
+            "url": url,
+            "bucket_index": index,
+            "bucket_name": title,
+            "status": "ok",
+        }
+    except http_requests.HTTPError as e:
+        raise HTTPException(502, f"Notion API error: {e}")
 
 
 @app.get("/api/topics/{name}/mission")
@@ -528,6 +733,46 @@ def api_update_budget(name: str, body: BudgetUpdate):
     return {"saved": True, "budget": agent_cfg["budget"]}
 
 
+@app.put("/api/topics/{name}/identity")
+def api_update_identity(name: str, body: TopicIdentityUpdate):
+    """Update identity.json fields (purpose/description)."""
+    paths = _paths_for(name)
+    id_path = paths["identity"]
+    if id_path.exists():
+        identity = json.loads(id_path.read_text())
+    else:
+        identity = {}
+    identity["purpose"] = body.purpose
+    id_path.write_text(json.dumps(identity, indent=2))
+    return {"saved": True}
+
+
+@app.post("/api/topics/{name}/rename")
+def api_rename_topic(name: str, body: TopicRename):
+    """Rename a topic directory."""
+    new_name = body.new_name.strip()
+    if not new_name:
+        raise HTTPException(400, "New name is required")
+    if re.search(r'[\\/:*?"<>|\s]', new_name):
+        raise HTTPException(400, "Name cannot contain spaces or special characters")
+    old_dir = _topic_dir(name)
+    new_dir = ROOT / "topics" / new_name
+    if new_dir.exists():
+        raise HTTPException(409, f"Topic '{new_name}' already exists")
+    # Refuse if agent is running
+    if name in _running_agents and _running_agents[name]["process"].poll() is None:
+        raise HTTPException(409, "Cannot rename a running agent — stop it first")
+    # Move directory
+    import shutil
+    shutil.move(str(old_dir), str(new_dir))
+    # Update active_topic in config.yaml if needed
+    config = load_config()
+    if config.get("active_topic") == name:
+        config["active_topic"] = new_name
+        save_config(config)
+    return {"saved": True, "new_name": new_name}
+
+
 # --- Summarize ---
 
 @app.post("/api/topics/{name}/summarize")
@@ -538,7 +783,7 @@ def api_summarize(name: str):
     if not research_dir.exists():
         raise HTTPException(404, "No research directory found")
 
-    files = sorted(research_dir.glob("*.md"))
+    files = _research_files(research_dir)
     if not files:
         raise HTTPException(404, "No research files to summarize")
 
@@ -1074,7 +1319,7 @@ def api_publish_to_notion(name: str):
     if not research_dir.exists():
         raise HTTPException(404, "No research directory found")
 
-    files = sorted(research_dir.glob("*.md"))
+    files = _research_files(research_dir)
     if not files:
         raise HTTPException(404, "No research files to publish")
 

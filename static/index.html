@@ -37,6 +37,8 @@
   .topic-card .meta { font-size: 11px; color: #9ca3af; margin-top: 3px; display: flex; gap: 10px; }
   .topic-card:hover .delete-btn { opacity: 1 !important; }
   .topic-card .delete-btn:hover { color: var(--red) !important; }
+  .topic-card:hover .edit-btn { opacity: 1 !important; }
+  .topic-card .edit-btn:hover { color: var(--accent) !important; }
   #new-topic-btn { margin: 10px; padding: 9px; background: transparent; border: 1px dashed #505050; border-radius: 8px; color: #9ca3af; cursor: pointer; text-align: center; font-size: 12px; font-weight: 500; transition: all 0.15s ease; }
   #new-topic-btn:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -92,6 +94,29 @@
   .md-content a:hover { text-decoration: underline; }
   .md-content strong { color: var(--text); font-weight: 600; }
   .md-content blockquote { border-left: 3px solid var(--accent); padding-left: 14px; color: var(--text2); margin: 10px 0; font-style: italic; }
+
+  /* Bucket sections */
+  .bucket-section { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; box-shadow: var(--shadow-sm); overflow: hidden; }
+  .bucket-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; cursor: pointer; user-select: none; transition: background 0.15s ease; }
+  .bucket-header:hover { background: var(--bg2); }
+  .bucket-header .bucket-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .bucket-header .bucket-title .arrow { font-size: 11px; color: var(--text2); transition: transform 0.2s ease; }
+  .bucket-header .bucket-title .arrow.open { transform: rotate(90deg); }
+  .bucket-header .bucket-meta { font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 12px; }
+  .bucket-body { border-top: 1px solid var(--border); padding: 14px 18px; display: none; }
+  .bucket-body.open { display: block; }
+  .bucket-files { display: grid; gap: 6px; margin-bottom: 14px; }
+  .bucket-files .file-item { padding: 8px 12px; }
+  .bucket-notion-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .bucket-notion-row input[type="text"] { flex: 1; min-width: 200px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 12px; padding: 7px 10px; transition: border-color 0.15s ease; }
+  .bucket-notion-row input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+  .bucket-publish-btn { background: #000; color: #fff; border: none; border-radius: 8px; padding: 7px 16px; font-size: 12px; font-weight: 500; cursor: pointer; transition: opacity 0.15s ease; white-space: nowrap; }
+  .bucket-publish-btn:hover { opacity: 0.85; }
+  .bucket-publish-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .bucket-save-btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s ease; white-space: nowrap; }
+  .bucket-save-btn:hover { opacity: 0.9; }
+  .bucket-save-btn.saved { background: var(--green); }
+  .bucket-status { font-size: 11px; color: var(--text2); }
 
   /* Configure tab */
   .config-section { margin-bottom: 28px; }
@@ -237,7 +262,10 @@ function renderSidebar() {
           ${t.running ? '<span class="running-dot" title="Running"></span>' : (t.active ? '<span class="active-dot"></span>' : '')}
           ${escHtml(t.name)}
         </span>
-        <span class="delete-btn" title="Delete agent" onclick="event.stopPropagation();confirmDelete('${n}')" style="opacity:0;color:#9ca3af;font-size:14px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x2715;</span>
+        <span style="display:flex;gap:2px">
+          <span class="edit-btn" title="Edit agent" onclick="event.stopPropagation();showEditModal('${n}')" style="opacity:0;color:#9ca3af;font-size:13px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x270E;</span>
+          <span class="delete-btn" title="Delete agent" onclick="event.stopPropagation();confirmDelete('${n}')" style="opacity:0;color:#9ca3af;font-size:14px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x2715;</span>
+        </span>
       </div>
       <div class="meta">
         <span>${t.cycles} cycles</span>
@@ -542,33 +570,179 @@ async function renderMonitor() {
 }
 
 // --- Research ---
+let _bucketsCache = null;
+
 async function renderResearch() {
   const el = document.getElementById('content');
-  const files = await api(`topics/${state.selected}/research`);
-  if (files.length === 0) {
+  let data;
+  try {
+    data = await api(`topics/${state.selected}/buckets`);
+  } catch (e) {
+    // Fallback to flat file list
+    data = { has_buckets: false, buckets: [], other_files: [] };
+    try {
+      const files = await api(`topics/${state.selected}/research`);
+      data.other_files = files;
+    } catch (_) {}
+  }
+  _bucketsCache = data;
+
+  const allEmpty = data.buckets.length === 0 && data.other_files.length === 0;
+  if (allEmpty) {
     el.innerHTML = '<div style="color:var(--text2);padding:20px">No research files yet. Run some cycles to generate research.</div>';
     return;
   }
-  // Update file list without blowing away an open file viewer
+
+  // Keep existing viewer if open
   const existingViewer = document.getElementById('file-viewer-area');
-  const fileListHtml = `
-    <div class="file-list" id="research-file-list">
-      ${files.map(f => `
-        <div class="file-item" onclick="viewFile('${esc(f.name)}')">
-          <span class="fname">${escHtml(f.name)}</span>
-          <span class="fsize">${(f.size / 1024).toFixed(1)} KB</span>
-        </div>
-      `).join('')}
-    </div>
-  `;
+  let viewerHtml = '';
   if (existingViewer) {
-    // Just update the file list, keep the viewer
-    const listEl = document.getElementById('research-file-list');
-    if (listEl) {
-      listEl.outerHTML = fileListHtml;
+    viewerHtml = existingViewer.outerHTML;
+  }
+
+  let html = '';
+
+  if (data.has_buckets && data.buckets.length > 0) {
+    html += '<div id="bucket-list">';
+    for (const b of data.buckets) {
+      const fileCount = b.files.length;
+      const sizeKb = (b.total_size / 1024).toFixed(1);
+      const pubStatus = b.published_at ? `Published ${formatTimestamp(b.published_at)}` : '';
+      const hasPageId = b.notion_page_id && b.notion_page_id.trim();
+
+      html += `
+        <div class="bucket-section" id="bucket-${b.index}">
+          <div class="bucket-header" onclick="toggleBucket(${b.index})">
+            <div class="bucket-title">
+              <span class="arrow" id="arrow-${b.index}">&#9654;</span>
+              ${escHtml(b.name)}
+            </div>
+            <div class="bucket-meta">
+              <span>${fileCount} file${fileCount !== 1 ? 's' : ''} &middot; ${sizeKb} KB</span>
+              ${pubStatus ? `<span class="bucket-status">${escHtml(pubStatus)}</span>` : ''}
+            </div>
+          </div>
+          <div class="bucket-body" id="bucket-body-${b.index}">
+            <div class="bucket-files">
+              ${b.files.map(f => `
+                <div class="file-item" onclick="viewFile('${esc(f.name)}')">
+                  <span class="fname">${escHtml(f.name)}</span>
+                  <span class="fsize">${(f.size / 1024).toFixed(1)} KB</span>
+                </div>
+              `).join('')}
+            </div>
+            <div class="bucket-notion-row">
+              <input type="text" id="bucket-notion-${b.index}" value="${escHtml(b.notion_page_id || '')}" placeholder="Notion page ID for this bucket" />
+              <button class="bucket-save-btn" id="bucket-save-${b.index}" onclick="saveBucketNotionPage(${b.index})">Save</button>
+              <button class="bucket-publish-btn" id="bucket-pub-${b.index}" onclick="publishBucket(${b.index})" ${hasPageId ? '' : 'disabled'}>Push to Notion</button>
+              <span class="bucket-status" id="bucket-status-${b.index}"></span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    html += '</div>';
+  }
+
+  if (data.other_files.length > 0) {
+    html += `
+      <div class="bucket-section" id="bucket-other" style="margin-top:${data.buckets.length > 0 ? '20px' : '0'}">
+        <div class="bucket-header" onclick="toggleBucket('other')">
+          <div class="bucket-title">
+            <span class="arrow" id="arrow-other">&#9654;</span>
+            Other Files
+          </div>
+          <div class="bucket-meta">
+            <span>${data.other_files.length} file${data.other_files.length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <div class="bucket-body" id="bucket-body-other">
+          <div class="bucket-files">
+            ${data.other_files.map(f => `
+              <div class="file-item" onclick="viewFile('${esc(f.name)}')">
+                <span class="fname">${escHtml(f.name)}</span>
+                <span class="fsize">${(f.size / 1024).toFixed(1)} KB</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  html += `<div id="file-viewer-area">${viewerHtml ? '' : ''}</div>`;
+
+  if (existingViewer) {
+    // Preserve viewer, just update bucket list
+    const listArea = document.getElementById('bucket-list') || document.getElementById('bucket-other');
+    if (listArea) {
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = html;
+      // Replace everything before the viewer
+      el.innerHTML = html;
+      // Restore viewer
+      document.getElementById('file-viewer-area').innerHTML = existingViewer.innerHTML;
+    } else {
+      el.innerHTML = html;
     }
   } else {
-    el.innerHTML = fileListHtml + '<div id="file-viewer-area"></div>';
+    el.innerHTML = html;
+  }
+
+  // Auto-expand if no buckets (flat list mode)
+  if (!data.has_buckets && data.other_files.length > 0) {
+    toggleBucket('other');
+  }
+}
+
+function toggleBucket(index) {
+  const body = document.getElementById(`bucket-body-${index}`);
+  const arrow = document.getElementById(`arrow-${index}`);
+  if (!body) return;
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open');
+  if (arrow) arrow.classList.toggle('open');
+}
+
+async function saveBucketNotionPage(index) {
+  const input = document.getElementById(`bucket-notion-${index}`);
+  const btn = document.getElementById(`bucket-save-${index}`);
+  const pubBtn = document.getElementById(`bucket-pub-${index}`);
+  const pageId = input.value.trim();
+
+  btn.textContent = 'Saving...';
+  try {
+    await api(`topics/${state.selected}/buckets/${index}/notion-page`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notion_page_id: pageId }),
+    });
+    btn.textContent = 'Saved';
+    btn.classList.add('saved');
+    if (pubBtn) pubBtn.disabled = !pageId;
+    setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('saved'); }, 2000);
+  } catch (e) {
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.textContent = 'Save'; }, 2000);
+  }
+}
+
+async function publishBucket(index) {
+  const btn = document.getElementById(`bucket-pub-${index}`);
+  const statusEl = document.getElementById(`bucket-status-${index}`);
+  btn.disabled = true;
+  btn.textContent = 'Publishing...';
+  statusEl.textContent = '';
+
+  try {
+    const result = await api(`topics/${state.selected}/buckets/${index}/publish`, { method: 'POST' });
+    btn.textContent = 'Push to Notion';
+    btn.disabled = false;
+    statusEl.innerHTML = `<a href="${result.url}" target="_blank" style="color:var(--green);font-weight:500">Published ${formatTimestamp(result.published_at)}</a>`;
+  } catch (e) {
+    btn.textContent = 'Push to Notion';
+    btn.disabled = false;
+    statusEl.innerHTML = `<span style="color:var(--red)">Failed: ${escHtml(e.message)}</span>`;
   }
 }
 
@@ -851,6 +1025,89 @@ async function createTopic() {
     selectTopic(name);
   } catch (e) {
     alert('Failed to create agent: ' + e.message);
+  }
+}
+
+// --- Edit modal ---
+async function showEditModal(name) {
+  // Fetch current detail for identity/purpose
+  let detail;
+  try {
+    detail = await api(`topics/${name}`);
+  } catch (e) {
+    alert('Failed to load agent details: ' + e.message);
+    return;
+  }
+  const t = state.topics.find(t => t.name === name);
+  const budget = (t && t.budget) || {};
+  const totalBudget = budget.max_total_usd ?? '';
+  const dailyLimit = budget.max_per_day_usd ?? '';
+  const purpose = (detail.identity && detail.identity.purpose) || '';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>Edit Agent</h2>
+      <label style="font-size:12px;color:var(--text2);font-weight:500;display:block;margin-bottom:4px">Name</label>
+      <input id="edit-name" value="${escHtml(name)}" />
+      <label style="font-size:12px;color:var(--text2);font-weight:500;display:block;margin-bottom:4px">Description / Purpose</label>
+      <textarea id="edit-desc">${escHtml(purpose)}</textarea>
+      <div class="budget-row">
+        <div style="flex:1">
+          <label>Total budget ($)</label>
+          <input id="edit-budget-total" type="number" step="0.50" min="0" value="${totalBudget}" />
+        </div>
+        <div style="flex:1">
+          <label>Daily limit ($)</label>
+          <input id="edit-budget-daily" type="number" step="0.50" min="0" value="${dailyLimit}" />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+        <button class="btn-primary" onclick="saveTopicEdits('${esc(name)}')">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('edit-name').focus();
+}
+
+async function saveTopicEdits(originalName) {
+  const newName = document.getElementById('edit-name').value.trim();
+  const desc = document.getElementById('edit-desc').value.trim();
+  const maxTotal = parseFloat(document.getElementById('edit-budget-total').value);
+  const maxDaily = parseFloat(document.getElementById('edit-budget-daily').value);
+  if (!newName) { alert('Name is required'); return; }
+
+  let currentName = originalName;
+  try {
+    // 1. Rename if name changed
+    if (newName !== originalName) {
+      await api(`topics/${originalName}/rename`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ new_name: newName })
+      });
+      currentName = newName;
+    }
+    // 2. Update description/purpose
+    await api(`topics/${currentName}/identity`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ purpose: desc })
+    });
+    // 3. Update budget
+    if (!isNaN(maxTotal) && !isNaN(maxDaily)) {
+      await api(`topics/${currentName}/budget`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ max_total_usd: maxTotal, max_per_day_usd: maxDaily })
+      });
+    }
+    // 4. Close modal, reload, re-select
+    document.querySelector('.modal-overlay').remove();
+    await load();
+    selectTopic(currentName);
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
   }
 }
 

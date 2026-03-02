@@ -1,12 +1,27 @@
 """Deepshika — self-modifying agent with human-in-the-loop approval."""
 
+import io
 import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Force UTF-8 stdout/stderr on Windows so click.echo and print never crash
+# on non-ASCII characters (emojis, arrows, etc.) from web search results.
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 import click
 import yaml

@@ -121,7 +121,7 @@ def _load_agent_budget(name: str) -> dict | None:
     """Load per-agent budget from agent_config.yaml, or None."""
     cfg_path = ROOT / "topics" / name / "agent_config.yaml"
     if cfg_path.exists():
-        cfg = yaml.safe_load(cfg_path.read_text()) or {}
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
         return cfg.get("budget")
     return None
 
@@ -130,7 +130,7 @@ def _load_buckets(name: str) -> list[dict]:
     """Load research_buckets from agent_config.yaml, or empty list."""
     cfg_path = ROOT / "topics" / name / "agent_config.yaml"
     if cfg_path.exists():
-        cfg = yaml.safe_load(cfg_path.read_text()) or {}
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
         return cfg.get("research_buckets", [])
     return []
 
@@ -139,12 +139,13 @@ def _save_buckets(name: str, buckets: list[dict]):
     """Write research_buckets back to agent_config.yaml, preserving other keys."""
     cfg_path = ROOT / "topics" / name / "agent_config.yaml"
     if cfg_path.exists():
-        cfg = yaml.safe_load(cfg_path.read_text()) or {}
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
     else:
         cfg = {}
     cfg["research_buckets"] = buckets
     cfg_path.write_text(
-        yaml.dump(cfg, default_flow_style=False, sort_keys=False)
+        yaml.dump(cfg, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
     )
 
 
@@ -166,7 +167,7 @@ def _topic_summary(name: str, active_topic: str) -> dict:
     cp_file = ROOT / "topics" / name / "data" / "checkpoints.json"
     checkpoint = None
     if cp_file.exists():
-        cp_data = json.loads(cp_file.read_text())
+        cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
         cp_hit = cp_data.get("checkpoints_hit", [])
         if cp_hit and not running:
             last_cp = max(cp_hit)
@@ -273,8 +274,8 @@ def api_create_topic(body: TopicCreate):
     output_file_names = []
 
     if scaffold:
-        (topic_dir / "mission.md").write_text(scaffold["mission"])
-        (topic_dir / "agent_parameters.md").write_text(scaffold["agent_parameters"])
+        (topic_dir / "mission.md").write_text(scaffold["mission"], encoding="utf-8")
+        (topic_dir / "agent_parameters.md").write_text(scaffold["agent_parameters"], encoding="utf-8")
 
         # Pre-create output files
         research_dir = topic_dir / "data" / "research"
@@ -283,7 +284,8 @@ def api_create_topic(body: TopicCreate):
             question = of.get("question", "")
             title = fn.replace("_", " ").replace(".md", "").title()
             (research_dir / fn).write_text(
-                f"# {title}\n\n<!-- Key question: {question} -->\n\n"
+                f"# {title}\n\n<!-- Key question: {question} -->\n\n",
+                encoding="utf-8",
             )
             output_file_names.append(fn)
 
@@ -310,13 +312,13 @@ def api_create_topic(body: TopicCreate):
         "traits": ["curious", "systematic", "depth-over-breadth"],
         "purpose": desc,
         "modification_history": [],
-    }, indent=2))
+    }, indent=2), encoding="utf-8")
 
     # Write per-agent config (budget + research buckets)
     cfg_path = topic_dir / "agent_config.yaml"
     agent_cfg = {}
     if cfg_path.exists():
-        agent_cfg = yaml.safe_load(cfg_path.read_text()) or {}
+        agent_cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
 
     if body.max_total_usd is not None or body.max_per_day_usd is not None:
         agent_cfg.setdefault("budget", {})
@@ -330,7 +332,8 @@ def api_create_topic(body: TopicCreate):
 
     if agent_cfg:
         cfg_path.write_text(
-            yaml.dump(agent_cfg, default_flow_style=False, sort_keys=False)
+            yaml.dump(agent_cfg, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
         )
 
     return {"created": name, "scaffolded": scaffolded, "output_files": output_file_names}
@@ -395,7 +398,7 @@ def api_research_file(name: str, file: str):
     f = paths["research_dir"] / file
     if not f.exists():
         raise HTTPException(404, f"Research file '{file}' not found")
-    return {"name": file, "content": f.read_text()}
+    return {"name": file, "content": f.read_text(encoding="utf-8")}
 
 
 # --- Research Buckets ---
@@ -423,7 +426,7 @@ def api_get_buckets(name: str):
     publish_state_path = paths["data_dir"] / "notion_publish.json"
     publish_state = {}
     if publish_state_path.exists():
-        publish_state = json.loads(publish_state_path.read_text())
+        publish_state = json.loads(publish_state_path.read_text(encoding="utf-8"))
 
     bucketed_names = set()
     enriched = []
@@ -498,7 +501,7 @@ def api_publish_bucket(name: str, index: int):
     for fn in bucket.get("files", []):
         fpath = research_dir / fn
         if fpath.exists():
-            content = fpath.read_text().strip()
+            content = fpath.read_text(encoding="utf-8").strip()
             if content:
                 parts.append(f"## {fn}\n\n{content}")
 
@@ -513,7 +516,7 @@ def api_publish_bucket(name: str, index: int):
     publish_state_path = paths["data_dir"] / "notion_publish.json"
     publish_state = {}
     if publish_state_path.exists():
-        publish_state = json.loads(publish_state_path.read_text())
+        publish_state = json.loads(publish_state_path.read_text(encoding="utf-8"))
 
     now = datetime.now(timezone.utc).isoformat()
     bucket_key = f"_bucket_{index}"
@@ -540,7 +543,7 @@ def api_publish_bucket(name: str, index: int):
             "published_at": now,
             "bucket_index": index,
         }
-        publish_state_path.write_text(json.dumps(publish_state, indent=2))
+        publish_state_path.write_text(json.dumps(publish_state, indent=2), encoding="utf-8")
 
         return {
             "published_at": now,
@@ -562,7 +565,7 @@ def api_get_mission(name: str):
 @app.put("/api/topics/{name}/mission")
 def api_put_mission(name: str, body: TextBody):
     paths = _paths_for(name)
-    paths["mission"].write_text(body.content)
+    paths["mission"].write_text(body.content, encoding="utf-8")
     return {"saved": True}
 
 
@@ -570,14 +573,14 @@ def api_put_mission(name: str, body: TextBody):
 def api_get_prompt(name: str):
     paths = _paths_for(name)
     sp = paths["agent_parameters"]
-    content = sp.read_text() if sp and sp.exists() else ""
+    content = sp.read_text(encoding="utf-8") if sp and sp.exists() else ""
     return {"content": content}
 
 
 @app.put("/api/topics/{name}/prompt")
 def api_put_prompt(name: str, body: TextBody):
     paths = _paths_for(name)
-    paths["agent_parameters"].write_text(body.content)
+    paths["agent_parameters"].write_text(body.content, encoding="utf-8")
     return {"saved": True}
 
 
@@ -690,7 +693,7 @@ def api_agents_status():
         cp_file = d / "data" / "checkpoints.json"
         checkpoint = None
         if cp_file.exists():
-            cp_data = json.loads(cp_file.read_text())
+            cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
             cp_hit = cp_data.get("checkpoints_hit", [])
             if cp_hit and not running:
                 last_cp = max(cp_hit)
@@ -719,7 +722,7 @@ def api_update_budget(name: str, body: BudgetUpdate):
     _topic_dir(name)  # validates existence
     cfg_path = ROOT / "topics" / name / "agent_config.yaml"
     if cfg_path.exists():
-        agent_cfg = yaml.safe_load(cfg_path.read_text()) or {}
+        agent_cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
     else:
         agent_cfg = {}
 
@@ -728,7 +731,8 @@ def api_update_budget(name: str, body: BudgetUpdate):
         "max_per_day_usd": body.max_per_day_usd,
     }
     cfg_path.write_text(
-        yaml.dump(agent_cfg, default_flow_style=False, sort_keys=False)
+        yaml.dump(agent_cfg, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
     )
     return {"saved": True, "budget": agent_cfg["budget"]}
 
@@ -739,11 +743,11 @@ def api_update_identity(name: str, body: TopicIdentityUpdate):
     paths = _paths_for(name)
     id_path = paths["identity"]
     if id_path.exists():
-        identity = json.loads(id_path.read_text())
+        identity = json.loads(id_path.read_text(encoding="utf-8"))
     else:
         identity = {}
     identity["purpose"] = body.purpose
-    id_path.write_text(json.dumps(identity, indent=2))
+    id_path.write_text(json.dumps(identity, indent=2), encoding="utf-8")
     return {"saved": True}
 
 
@@ -790,7 +794,7 @@ def api_summarize(name: str):
     # Gather all research content
     research_parts = []
     for f in files:
-        content = f.read_text().strip()
+        content = f.read_text(encoding="utf-8").strip()
         if content:
             research_parts.append(f"## {f.name}\n\n{content}")
 
@@ -829,7 +833,7 @@ def api_summarize(name: str):
     summary_path.write_text(json.dumps({
         "summary": summary,
         "generated_at": generated_at,
-    }, indent=2))
+    }, indent=2), encoding="utf-8")
 
     return {"summary": summary, "generated_at": generated_at}
 
@@ -841,7 +845,7 @@ def api_get_summary_file(name: str):
     summary_path = paths["base"] / "data" / "summary.json"
     if not summary_path.exists():
         return {"summary": None, "generated_at": None}
-    data = json.loads(summary_path.read_text())
+    data = json.loads(summary_path.read_text(encoding="utf-8"))
     return {"summary": data.get("summary"), "generated_at": data.get("generated_at")}
 
 
@@ -868,7 +872,7 @@ def _load_notion_config() -> dict:
 def _save_notion_config(notion_cfg: dict):
     """Upsert the notion: block in config.yaml, preserving other content."""
     cfg_path = ROOT / "config.yaml"
-    text = cfg_path.read_text() if cfg_path.exists() else ""
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
 
     # Build the YAML snippet for the notion block
     lines = ["notion:"]
@@ -889,7 +893,7 @@ def _save_notion_config(notion_cfg: dict):
     else:
         text = text.rstrip() + "\n\n" + snippet + "\n"
 
-    cfg_path.write_text(text)
+    cfg_path.write_text(text, encoding="utf-8")
 
 
 def _notion_headers(token: str = None) -> dict:
@@ -1207,7 +1211,7 @@ def _compute_topic_status(name: str, paths: dict) -> str:
     # Checkpoint?
     cp_file = paths["data_dir"] / "checkpoints.json"
     if cp_file.exists():
-        cp_data = json.loads(cp_file.read_text())
+        cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
         if cp_data.get("checkpoints_hit"):
             return "Checkpoint"
 
@@ -1263,7 +1267,7 @@ def _load_llm_config() -> dict:
 def _save_llm_config(llm_cfg: dict):
     """Upsert the llm: block in config.yaml, preserving other content."""
     cfg_path = ROOT / "config.yaml"
-    text = cfg_path.read_text() if cfg_path.exists() else ""
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
 
     lines = ["llm:"]
     for key in ("provider", "api_key"):
@@ -1281,7 +1285,7 @@ def _save_llm_config(llm_cfg: dict):
     else:
         text = text.rstrip() + "\n\n" + snippet + "\n"
 
-    cfg_path.write_text(text)
+    cfg_path.write_text(text, encoding="utf-8")
 
 
 @app.get("/api/llm/config")
@@ -1356,14 +1360,14 @@ def api_publish_to_notion(name: str):
     publish_state_path = paths["data_dir"] / "notion_publish.json"
     publish_state: dict = {}
     if publish_state_path.exists():
-        publish_state = json.loads(publish_state_path.read_text())
+        publish_state = json.loads(publish_state_path.read_text(encoding="utf-8"))
 
     now = datetime.now(timezone.utc).isoformat()
 
     results = []
 
     for f in files:
-        content = f.read_text().strip()
+        content = f.read_text(encoding="utf-8").strip()
         if not content:
             continue
 
@@ -1401,7 +1405,7 @@ def api_publish_to_notion(name: str):
     publish_state["_topic_row_id"] = topic_row_id
     publish_state["_topic_row_url"] = topic_row_url
     publish_state["_hub_database_id"] = db_id
-    publish_state_path.write_text(json.dumps(publish_state, indent=2))
+    publish_state_path.write_text(json.dumps(publish_state, indent=2), encoding="utf-8")
 
     # Build database URL
     database_url = f"https://notion.so/{db_id.replace('-', '')}"
@@ -1421,7 +1425,7 @@ def api_notion_status(name: str):
     publish_state_path = paths["data_dir"] / "notion_publish.json"
     if not publish_state_path.exists():
         return {"published": False, "published_at": None, "topic_url": None, "database_url": None, "pages": []}
-    pub = json.loads(publish_state_path.read_text())
+    pub = json.loads(publish_state_path.read_text(encoding="utf-8"))
     timestamps = [
         v.get("published_at", "")
         for k, v in pub.items()

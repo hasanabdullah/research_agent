@@ -25,7 +25,7 @@ ROOT = Path(__file__).parent
 def load_config() -> dict:
     cfg_path = ROOT / "config.yaml"
     if cfg_path.exists():
-        return yaml.safe_load(cfg_path.read_text()) or {}
+        return yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
     return {}
 
 
@@ -34,7 +34,7 @@ def save_config(config: dict):
     import re
     cfg_path = ROOT / "config.yaml"
     if cfg_path.exists():
-        text = cfg_path.read_text()
+        text = cfg_path.read_text(encoding="utf-8")
         # Try to surgically update active_topic if it exists
         if re.search(r'^active_topic:.*$', text, re.MULTILINE):
             text = re.sub(
@@ -42,22 +42,22 @@ def save_config(config: dict):
                 f"active_topic: {config.get('active_topic', '')}",
                 text, flags=re.MULTILINE,
             )
-            cfg_path.write_text(text)
+            cfg_path.write_text(text, encoding="utf-8")
             return
         # Add active_topic at the end
         if "active_topic" in config:
             text = text.rstrip() + f"\n\nactive_topic: {config['active_topic']}\n"
-            cfg_path.write_text(text)
+            cfg_path.write_text(text, encoding="utf-8")
             return
     # Fallback: full rewrite
-    cfg_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+    cfg_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False), encoding="utf-8")
 
 
 def load_agent_config(topic_name: str) -> dict:
     """Merge per-agent config over global config."""
     global_cfg = load_config()
     agent_cfg_path = ROOT / "topics" / topic_name / "agent_config.yaml"
-    agent_cfg = yaml.safe_load(agent_cfg_path.read_text()) if agent_cfg_path.exists() else {}
+    agent_cfg = yaml.safe_load(agent_cfg_path.read_text(encoding="utf-8")) if agent_cfg_path.exists() else {}
     merged = dict(global_cfg)
     merged["active_topic"] = topic_name
     if "budget" in agent_cfg:
@@ -190,7 +190,8 @@ def _write_static_scaffold(topic_dir: Path, name: str, description: str):
         f"## Current Mode: RESEARCH ONLY\n\n"
         f"You cannot modify code. Build research files under `data/research/`.\n\n"
         f"## What To Research\n\n(Define your research questions here)\n\n"
-        f"## Output Files (create under data/research/)\n\n(Define your output files here)\n"
+        f"## Output Files (create under data/research/)\n\n(Define your output files here)\n",
+        encoding="utf-8",
     )
     (topic_dir / "agent_parameters.md").write_text(
         f"You are Deepshika, a research agent investigating: {name}.\n"
@@ -203,7 +204,8 @@ def _write_static_scaffold(topic_dir: Path, name: str, description: str):
         f"Use `propose_edit` only when creating a new file.\n"
         f"IMPORTANT: Keep each tool call's content under 2000 characters. If you have more to write,\n"
         f"make multiple append_to_file calls in the same cycle. This prevents JSON formatting errors.\n"
-        f"Be brutally honest. Name real companies, cite real incidents.\n"
+        f"Be brutally honest. Name real companies, cite real incidents.\n",
+        encoding="utf-8",
     )
 
 
@@ -241,21 +243,21 @@ def load_agent_parameters(paths: dict) -> str:
     """Load agent parameters from topic file, or return a generic fallback."""
     sp_file = paths.get("agent_parameters")
     if sp_file and sp_file.exists():
-        return sp_file.read_text().strip()
+        return sp_file.read_text(encoding="utf-8").strip()
     return "You are a research agent. Follow your mission file."
 
 
 def load_identity(paths: dict = None) -> dict:
     identity_file = paths["identity"] if paths else ROOT / "data" / "identity.json"
     if identity_file.exists():
-        return json.loads(identity_file.read_text())
+        return json.loads(identity_file.read_text(encoding="utf-8"))
     return {"name": "Deepshika", "version": "0.0.0"}
 
 
 def save_identity(identity: dict, paths: dict = None):
     identity_file = paths["identity"] if paths else ROOT / "data" / "identity.json"
     identity_file.parent.mkdir(parents=True, exist_ok=True)
-    identity_file.write_text(json.dumps(identity, indent=2))
+    identity_file.write_text(json.dumps(identity, indent=2), encoding="utf-8")
 
 
 def bump_version(identity: dict) -> str:
@@ -287,7 +289,7 @@ def get_recent_cycles(n: int = 5, paths: dict = None) -> list[dict]:
     cycles_file = paths["cycles_file"] if paths else ROOT / "data" / "cycles.jsonl"
     if not cycles_file.exists():
         return []
-    lines = [l for l in cycles_file.read_text().strip().split("\n") if l]
+    lines = [l for l in cycles_file.read_text(encoding="utf-8").strip().split("\n") if l]
     return [json.loads(l) for l in lines[-n:]]
 
 
@@ -328,7 +330,7 @@ def load_mission(paths: dict = None) -> str:
     """Load the mission file."""
     mission_path = paths["mission"] if paths else ROOT / "MISSION.md"
     if mission_path.exists():
-        return mission_path.read_text()
+        return mission_path.read_text(encoding="utf-8")
     return ""
 
 
@@ -614,7 +616,7 @@ def run_cycle(config: dict) -> dict:
     pending_patches = sorted(patches_dir.glob("*.patch")) if patches_dir.exists() else []
 
     for patch_file in pending_patches:
-        patch_data = json.loads(patch_file.read_text())
+        patch_data = json.loads(patch_file.read_text(encoding="utf-8"))
         if patch_data.get("status") != "pending":
             continue
 
@@ -632,7 +634,7 @@ def run_cycle(config: dict) -> dict:
             if verdict["verdict"] == "reject":
                 click.echo(f"Supervisor REJECTED research edit — skipping.")
                 patch_data["status"] = "rejected"
-                patch_file.write_text(json.dumps(patch_data, indent=2))
+                patch_file.write_text(json.dumps(patch_data, indent=2), encoding="utf-8")
                 action = "rejected"
                 continue
 
@@ -660,7 +662,7 @@ def run_cycle(config: dict) -> dict:
         if choice == "a":
             target = _resolve_file_path(patch_data["path"])
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(patch_data["new_content"])
+            target.write_text(patch_data["new_content"], encoding="utf-8")
             click.echo(f"Applied: {target}")
 
             # Git commit
@@ -676,7 +678,7 @@ def run_cycle(config: dict) -> dict:
         elif choice == "r":
             click.echo("Change rejected.")
             patch_data["status"] = "rejected"
-            patch_file.write_text(json.dumps(patch_data, indent=2))
+            patch_file.write_text(json.dumps(patch_data, indent=2), encoding="utf-8")
             action = "rejected"
         elif choice == "s":
             click.echo("Skipped for now.")
@@ -794,7 +796,7 @@ def status():
     # Pending patches
     patches_dir = paths["patches_dir"]
     pending = list(patches_dir.glob("*.patch")) if patches_dir.exists() else []
-    pending_count = sum(1 for p in pending if json.loads(p.read_text()).get("status") == "pending")
+    pending_count = sum(1 for p in pending if json.loads(p.read_text(encoding="utf-8")).get("status") == "pending")
     if pending_count:
         click.echo(f"Pending patches: {pending_count}")
 
@@ -816,14 +818,14 @@ def review():
         return
 
     patches = sorted(patches_dir.glob("*.patch"))
-    pending = [p for p in patches if json.loads(p.read_text()).get("status") == "pending"]
+    pending = [p for p in patches if json.loads(p.read_text(encoding="utf-8")).get("status") == "pending"]
 
     if not pending:
         click.echo("No pending patches to review.")
         return
 
     for patch_path in pending:
-        patch_data = json.loads(patch_path.read_text())
+        patch_data = json.loads(patch_path.read_text(encoding="utf-8"))
         click.echo(f"\n{'='*60}")
         click.echo(f"File: {patch_data['path']}")
         click.echo(f"Reasoning: {patch_data['reasoning']}")
@@ -840,7 +842,7 @@ def review():
         if choice == "a":
             target = ROOT / patch_data["path"]
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(patch_data["new_content"])
+            target.write_text(patch_data["new_content"], encoding="utf-8")
             git_run("add", patch_data["path"])
             identity = load_identity(paths)
             new_version = bump_version(identity)
@@ -851,7 +853,7 @@ def review():
             patch_path.unlink()
         elif choice == "r":
             patch_data["status"] = "rejected"
-            patch_path.write_text(json.dumps(patch_data, indent=2))
+            patch_path.write_text(json.dumps(patch_data, indent=2), encoding="utf-8")
             click.echo("Rejected.")
         elif choice == "s":
             click.echo("Skipped.")
@@ -965,7 +967,7 @@ def watch(n, interval):
                 if files:
                     for f in files:
                         size = f.stat().st_size
-                        lines = f.read_text().count("\n")
+                        lines = f.read_text(encoding="utf-8").count("\n")
                         click.echo(f"    {f.name:<35} {size:>6} bytes  {lines:>4} lines")
                 else:
                     click.echo(f"    (none yet)")
@@ -1056,8 +1058,8 @@ def topic_create(name):
 
     if scaffold:
         # Write LLM-generated files
-        (topic_dir / "mission.md").write_text(scaffold["mission"])
-        (topic_dir / "agent_parameters.md").write_text(scaffold["agent_parameters"])
+        (topic_dir / "mission.md").write_text(scaffold["mission"], encoding="utf-8")
+        (topic_dir / "agent_parameters.md").write_text(scaffold["agent_parameters"], encoding="utf-8")
 
         # Pre-create output files in data/research/
         research_dir = topic_dir / "data" / "research"
@@ -1066,7 +1068,8 @@ def topic_create(name):
             question = of.get("question", "")
             title = fn.replace("_", " ").replace(".md", "").title()
             (research_dir / fn).write_text(
-                f"# {title}\n\n<!-- Key question: {question} -->\n\n"
+                f"# {title}\n\n<!-- Key question: {question} -->\n\n",
+                encoding="utf-8",
             )
 
         output_names = [of["filename"] for of in scaffold["output_files"]]
@@ -1095,7 +1098,7 @@ def topic_create(name):
         "traits": ["curious", "systematic", "depth-over-breadth"],
         "purpose": description,
         "modification_history": [],
-    }, indent=2))
+    }, indent=2), encoding="utf-8")
 
     # Switch to the new topic
     config = load_config()
@@ -1141,7 +1144,7 @@ def topic_list():
         # Cost
         costs_file = d / "data" / "costs.json"
         if costs_file.exists():
-            ledger = json.loads(costs_file.read_text())
+            ledger = json.loads(costs_file.read_text(encoding="utf-8"))
             total_cost = ledger.get("total_usd", 0.0)
         else:
             total_cost = 0.0
@@ -1271,7 +1274,7 @@ def migrate():
         "The question is: can you build a product consumers actually use, that generates a proprietary dataset "
         "large incumbents would acquire at premium multiples?"
     )
-    (topic_dir / "agent_parameters.md").write_text(agent_parameters)
+    (topic_dir / "agent_parameters.md").write_text(agent_parameters, encoding="utf-8")
     click.echo(f"  Extracted agent parameters -> topics/{topic_name}/agent_parameters.md")
 
     # 3. Copy data/identity.json -> topic/identity.json
@@ -1334,7 +1337,7 @@ def _load_checkpoints(topic_name: str) -> set:
     """Load already-crossed checkpoint thresholds from disk."""
     cp_file = ROOT / "topics" / topic_name / "data" / "checkpoints.json"
     if cp_file.exists():
-        data = json.loads(cp_file.read_text())
+        data = json.loads(cp_file.read_text(encoding="utf-8"))
         return set(data.get("checkpoints_hit", []))
     return set()
 
@@ -1343,7 +1346,7 @@ def _save_checkpoints(topic_name: str, checkpoints_hit: set):
     """Persist crossed checkpoint thresholds to disk."""
     cp_file = ROOT / "topics" / topic_name / "data" / "checkpoints.json"
     cp_file.parent.mkdir(parents=True, exist_ok=True)
-    cp_file.write_text(json.dumps({"checkpoints_hit": sorted(checkpoints_hit)}))
+    cp_file.write_text(json.dumps({"checkpoints_hit": sorted(checkpoints_hit)}), encoding="utf-8")
 
 
 @cli.command("run-topic")

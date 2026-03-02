@@ -287,7 +287,7 @@ def get_recent_cycles(n: int = 5, paths: dict = None) -> list[dict]:
     cycles_file = paths["cycles_file"] if paths else ROOT / "data" / "cycles.jsonl"
     if not cycles_file.exists():
         return []
-    lines = cycles_file.read_text().strip().split("\n")
+    lines = [l for l in cycles_file.read_text().strip().split("\n") if l]
     return [json.loads(l) for l in lines[-n:]]
 
 

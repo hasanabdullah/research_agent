@@ -43,7 +43,7 @@ def _resolve_file_path(path: str) -> Path:
 def _load_config() -> dict:
     cfg_path = ROOT / "config.yaml"
     if cfg_path.exists():
-        return yaml.safe_load(cfg_path.read_text()) or {}
+        return yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
     return {}
 
 
@@ -227,7 +227,7 @@ def handle_read_file(path: str) -> str:
     if target.is_dir():
         return "ERROR: Path is a directory, not a file."
     try:
-        return target.read_text()
+        return target.read_text(encoding="utf-8")
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -260,7 +260,7 @@ def handle_propose_edit(path: str, new_content: str, reasoning: str) -> str:
 
     # Read current content (empty if file doesn't exist yet)
     if target.exists():
-        old_lines = target.read_text().splitlines(keepends=True)
+        old_lines = target.read_text(encoding="utf-8").splitlines(keepends=True)
     else:
         old_lines = []
 
@@ -295,7 +295,7 @@ def handle_propose_edit(path: str, new_content: str, reasoning: str) -> str:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "pending",
     }
-    patch_path.write_text(json.dumps(patch_data, indent=2))
+    patch_path.write_text(json.dumps(patch_data, indent=2), encoding="utf-8")
 
     line_count = sum(1 for l in diff if l.startswith("+") and not l.startswith("+++"))
     return (
@@ -319,7 +319,7 @@ def handle_append_to_file(path: str, content: str, reasoning: str) -> str:
     target.parent.mkdir(parents=True, exist_ok=True)
 
     # Read existing content
-    existing = target.read_text() if target.exists() else ""
+    existing = target.read_text(encoding="utf-8") if target.exists() else ""
 
     # Ensure separator between existing and new content
     separator = "\n\n" if existing and not existing.endswith("\n\n") else "\n" if existing and not existing.endswith("\n") else ""
@@ -357,7 +357,7 @@ def handle_append_to_file(path: str, content: str, reasoning: str) -> str:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "pending",
     }
-    patch_path.write_text(json.dumps(patch_data, indent=2))
+    patch_path.write_text(json.dumps(patch_data, indent=2), encoding="utf-8")
 
     appended_lines = content.count("\n") + 1
     return (

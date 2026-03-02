@@ -34,13 +34,15 @@ modifiable_files:
 # Agent can create/edit any .md or .txt file under this directory
 research_dir: data/research
 
-active_topic: micro-saas-opportunities
+active_topic: ""
 
+# Notion integration — set via dashboard Configure tab
 notion:
   token: ""
   root_page_id: ""
   hub_database_id: ""
 
+# LLM provider & API key — set via dashboard Configure tab
 llm:
   provider: ""
   api_key: ""

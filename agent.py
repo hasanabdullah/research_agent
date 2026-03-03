@@ -384,30 +384,53 @@ def _build_phase_guidance(config: dict, paths: dict) -> str:
     remaining = max(0, max_budget - spent)
     research_dir = paths["research_dir"] if paths else ROOT / "data" / "research"
 
-    # Classify each phase as complete or incomplete based on file sizes
+    # Classify each phase as complete or incomplete
     phases = []
     for bucket in buckets:
         name = bucket["name"]
         files = bucket.get("files", [])
         weight = bucket.get("weight", 1.0)
         min_budget = bucket.get("min_budget_usd", 0.0)
+        min_complete_bytes = bucket.get("min_complete_bytes", 2048)
+        completion_marker = bucket.get("completion_marker", "")
+        min_marker_count = bucket.get("min_marker_count", 0)
         md_files = [f for f in files if f.endswith(".md")]
         target_file = md_files[0] if md_files else (files[0] if files else None)
 
-        # Check if phase has substantial content (>2KB = real content)
+        # Check file size across all output files for this phase
         max_size = 0
+        primary_content = ""
         for fn in files:
             fpath = research_dir / fn
             if fpath.exists():
-                max_size = max(max_size, fpath.stat().st_size)
+                size = fpath.stat().st_size
+                if size > max_size:
+                    max_size = size
+                # Read the largest .md file for marker counting
+                if fn.endswith(".md") and size > 0:
+                    try:
+                        primary_content = fpath.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
+
+        # Completion requires BOTH: byte threshold AND marker count (if configured)
+        bytes_ok = max_size >= min_complete_bytes
+        markers_ok = True
+        marker_count = 0
+        if completion_marker and min_marker_count > 0:
+            marker_count = primary_content.count(completion_marker)
+            markers_ok = marker_count >= min_marker_count
 
         phases.append({
             "name": name,
             "target_file": target_file,
             "max_size": max_size,
-            "complete": max_size > 2048,
+            "complete": bytes_ok and markers_ok,
             "weight": weight,
             "min_budget": min_budget,
+            "marker_count": marker_count,
+            "min_marker_count": min_marker_count,
+            "completion_marker": completion_marker,
         })
 
     # Find current phase (first incomplete)
@@ -474,10 +497,14 @@ def _build_phase_guidance(config: dict, paths: dict) -> str:
     ]
 
     for i, p in enumerate(phases):
+        progress = ""
+        if p["completion_marker"] and p["min_marker_count"] > 0:
+            progress = f" [{p['marker_count']}/{p['min_marker_count']} {p['completion_marker']}s]"
+
         if p["complete"]:
-            lines.append(f"{p['name']} — COMPLETE ({p['max_size']} bytes, target ${p['target']:.2f})")
+            lines.append(f"{p['name']} — COMPLETE ({p['max_size']} bytes{progress}, target ${p['target']:.2f})")
         elif i == current_idx:
-            lines.append(f"{p['name']} — CURRENT | Target: ${p['target']:.2f} | Remaining: ${p['allocation']:.2f}")
+            lines.append(f"{p['name']} — CURRENT | Target: ${p['target']:.2f} | Remaining: ${p['allocation']:.2f}{progress}")
             lines.append(f"  Target file: {p['target_file']}")
         else:
             lines.append(f"{p['name']} — QUEUED | Target: ${p['target']:.2f}")

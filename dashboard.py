@@ -85,6 +85,10 @@ class TopicRename(BaseModel):
     new_name: str
 
 
+class SelectionConfirm(BaseModel):
+    selected_idea_ids: list[str]
+
+
 # --- Helpers ---
 
 def _topic_dir(name: str) -> Path:
@@ -805,6 +809,7 @@ def api_agents_status():
         # Checkpoint state
         cp_file = d / "data" / "checkpoints.json"
         checkpoint = None
+        selection_checkpoint = None
         if cp_file.exists():
             cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
             cp_hit = cp_data.get("checkpoints_hit", [])
@@ -814,6 +819,14 @@ def api_agents_status():
                     "threshold": last_cp,
                     "label": f"{int(last_cp * 100)}%",
                     "checkpoints_hit": cp_hit,
+                }
+            # Selection checkpoint
+            sc = cp_data.get("selection_checkpoint")
+            if sc and not sc.get("confirmed") and not running:
+                selection_checkpoint = {
+                    "phase": sc.get("phase", ""),
+                    "idea_count": len(sc.get("ideas", [])),
+                    "timestamp": sc.get("timestamp", ""),
                 }
 
         result.append({
@@ -825,6 +838,7 @@ def api_agents_status():
             "cost": round(cost, 4),
             "budget": agent_budget,
             "checkpoint": checkpoint,
+            "selection_checkpoint": selection_checkpoint,
         })
 
     return result
@@ -849,6 +863,66 @@ def api_update_budget(name: str, body: BudgetUpdate):
         encoding="utf-8",
     )
     return {"saved": True, "budget": agent_cfg["budget"]}
+
+
+@app.get("/api/topics/{name}/selection-checkpoint")
+def api_get_selection_checkpoint(name: str):
+    """Return selection checkpoint data if one is active (not yet confirmed)."""
+    _topic_dir(name)
+    cp_file = ROOT / "topics" / name / "data" / "checkpoints.json"
+    if not cp_file.exists():
+        return {"active": False}
+    try:
+        cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
+    except Exception:
+        return {"active": False}
+    sc = cp_data.get("selection_checkpoint")
+    if not sc or sc.get("confirmed"):
+        return {"active": False}
+    return {
+        "active": True,
+        "phase": sc.get("phase", ""),
+        "ideas": sc.get("ideas", []),
+        "timestamp": sc.get("timestamp", ""),
+    }
+
+
+@app.post("/api/topics/{name}/selection-checkpoint/confirm")
+def api_confirm_selection(name: str, body: SelectionConfirm):
+    """Confirm idea selection: save to checkpoints.json and create phase_filter.json."""
+    _topic_dir(name)
+    cp_file = ROOT / "topics" / name / "data" / "checkpoints.json"
+    if not cp_file.exists():
+        raise HTTPException(404, "No checkpoint data found")
+
+    cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
+    sc = cp_data.get("selection_checkpoint")
+    if not sc:
+        raise HTTPException(404, "No selection checkpoint active")
+
+    all_ideas = sc.get("ideas", [])
+    selected_ids = set(body.selected_idea_ids)
+    selected_ideas = [idea for idea in all_ideas if idea["id"] in selected_ids]
+
+    if not selected_ideas:
+        raise HTTPException(400, "Must select at least one idea")
+
+    # Mark checkpoint as confirmed
+    sc["confirmed"] = True
+    sc["selected_idea_ids"] = list(selected_ids)
+    cp_file.write_text(json.dumps(cp_data, indent=2), encoding="utf-8")
+
+    # Create phase_filter.json for the agent to read on resume
+    research_dir = ROOT / "topics" / name / "data" / "research"
+    phase_filter = {
+        "selected_ideas": selected_ideas,
+        "confirmed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    (research_dir / "phase_filter.json").write_text(
+        json.dumps(phase_filter, indent=2), encoding="utf-8"
+    )
+
+    return {"saved": True, "selected_count": len(selected_ideas)}
 
 
 @app.put("/api/topics/{name}/identity")

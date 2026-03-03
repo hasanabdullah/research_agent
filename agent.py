@@ -514,7 +514,26 @@ def _build_phase_guidance(config: dict, paths: dict) -> str:
     if current_idx is not None:
         current = phases[current_idx]
         completed_phases = [p for p in phases if p["complete"]]
-        if completed_phases and current_idx > 0:
+
+        # Check for phase_filter.json to restrict which ideas to write playbooks for
+        phase_filter_file = research_dir / "phase_filter.json"
+        phase_filter = None
+        if phase_filter_file.exists():
+            try:
+                phase_filter = json.loads(phase_filter_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        if phase_filter and phase_filter.get("selected_ideas"):
+            selected = phase_filter["selected_ideas"]
+            idea_names = ", ".join(
+                f"{idea['title']} (#{idea['rank']})" for idea in selected
+            )
+            lines.append(f">>> CURRENT TASK: Work on {current['name']}.")
+            lines.append(f">>> Write to: {current['target_file']}")
+            lines.append(f">>> Write playbooks ONLY for these selected ideas: {idea_names}")
+            lines.append(f">>> Skip all other ideas.")
+        elif completed_phases and current_idx > 0:
             prev = phases[current_idx - 1]
             lines.append(f">>> ACTION REQUIRED: Start {current['name']} NOW.")
             lines.append(f">>> Write to: {current['target_file']}")
@@ -527,6 +546,39 @@ def _build_phase_guidance(config: dict, paths: dict) -> str:
         lines.append(">>> All phases complete!")
 
     return "\n".join(lines)
+
+
+def _extract_ideas(research_dir: Path) -> list[dict]:
+    """Parse top_ideas.md for ## IDEA #N: Title headers.
+
+    Returns a list of dicts with id, rank, title, and score fields.
+    """
+    import re
+    ideas_file = research_dir / "top_ideas.md"
+    if not ideas_file.exists():
+        return []
+
+    content = ideas_file.read_text(encoding="utf-8")
+    # Match headers like: ## IDEA #1: QuoteFlow AI — Commercial Insurance Quoting (8/8)
+    pattern = re.compile(
+        r'^## IDEA\s*#(\d+)\s*:\s*(.+?)(?:\s*\((\d+)/(\d+)\))?\s*$',
+        re.MULTILINE,
+    )
+    ideas = []
+    for m in pattern.finditer(content):
+        rank = int(m.group(1))
+        title = m.group(2).strip()
+        score_num = m.group(3)
+        score_den = m.group(4)
+        score = f"{score_num}/{score_den}" if score_num and score_den else ""
+        ideas.append({
+            "id": f"idea_{rank}",
+            "rank": rank,
+            "title": title,
+            "score": score,
+        })
+    ideas.sort(key=lambda x: x["rank"])
+    return ideas
 
 
 def _extract_phase_directive(phase_guidance: str) -> str:
@@ -1540,6 +1592,40 @@ def _save_checkpoints(topic_name: str, checkpoints_hit: set):
     cp_file.write_text(json.dumps({"checkpoints_hit": sorted(checkpoints_hit)}), encoding="utf-8")
 
 
+def _get_current_phase_idx(config: dict, paths: dict) -> int | None:
+    """Return the index of the first incomplete phase, or None if all complete."""
+    buckets = config.get("research_buckets", [])
+    research_dir = paths["research_dir"] if paths else ROOT / "data" / "research"
+    for i, bucket in enumerate(buckets):
+        files = bucket.get("files", [])
+        min_complete_bytes = bucket.get("min_complete_bytes", 2048)
+        completion_marker = bucket.get("completion_marker", "")
+        min_marker_count = bucket.get("min_marker_count", 0)
+
+        max_size = 0
+        primary_content = ""
+        for fn in files:
+            fpath = research_dir / fn
+            if fpath.exists():
+                size = fpath.stat().st_size
+                if size > max_size:
+                    max_size = size
+                if fn.endswith(".md") and size > 0:
+                    try:
+                        primary_content = fpath.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
+
+        bytes_ok = max_size >= min_complete_bytes
+        markers_ok = True
+        if completion_marker and min_marker_count > 0:
+            markers_ok = primary_content.count(completion_marker) >= min_marker_count
+
+        if not (bytes_ok and markers_ok):
+            return i
+    return None
+
+
 @cli.command("run-topic")
 @click.argument("topic_name")
 @click.option("--cycles", default=0, help="0 = run until budget exhausted")
@@ -1559,6 +1645,8 @@ def run_topic(topic_name, cycles, delay):
     checkpoints_hit = _load_checkpoints(topic_name)
 
     cycle_count = 0
+    prev_phase_idx = _get_current_phase_idx(config, paths)
+
     while True:
         result = run_cycle(config)
         cycle_count += 1
@@ -1566,6 +1654,52 @@ def run_topic(topic_name, cycles, delay):
             break
         if cycles > 0 and cycle_count >= cycles:
             break
+
+        # Selection checkpoint: detect phase transition on phases with selection_checkpoint
+        cur_phase_idx = _get_current_phase_idx(config, paths)
+        buckets = config.get("research_buckets", [])
+        if (prev_phase_idx is not None
+                and cur_phase_idx != prev_phase_idx
+                and prev_phase_idx < len(buckets)):
+            completed_bucket = buckets[prev_phase_idx]
+            if completed_bucket.get("selection_checkpoint"):
+                research_dir = paths["research_dir"]
+                ideas = _extract_ideas(research_dir)
+                if ideas:
+                    # Save to checkpoints.json
+                    cp_file = paths["data_dir"] / "checkpoints.json"
+                    cp_data = {}
+                    if cp_file.exists():
+                        try:
+                            cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
+                        except Exception:
+                            pass
+                    cp_data["selection_checkpoint"] = {
+                        "phase": completed_bucket["name"],
+                        "ideas": ideas,
+                        "confirmed": False,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    cp_file.write_text(json.dumps(cp_data, indent=2), encoding="utf-8")
+
+                    # Log to cycles.jsonl
+                    log_cycle({
+                        "cycle": result.get("cycle", cycle_count),
+                        "action": "selection_checkpoint",
+                        "summary": f"Selection checkpoint after {completed_bucket['name']}: {len(ideas)} ideas extracted",
+                        "applied": False,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "cost_after": get_total_usd(paths["costs_file"]),
+                    }, paths)
+
+                    click.echo(f"\n{'='*60}")
+                    click.echo(f"SELECTION CHECKPOINT: {completed_bucket['name']} complete")
+                    click.echo(f"  {len(ideas)} ideas extracted. Select which ideas to write playbooks for.")
+                    click.echo(f"  Use the dashboard to pick ideas, then restart.")
+                    click.echo(f"{'='*60}\n")
+                    break
+
+        prev_phase_idx = cur_phase_idx
 
         # Budget checkpoint check
         if review_thresholds:

@@ -199,6 +199,7 @@ let state = { topics: [], selected: null, tab: 'insights', config: {} };
 let refreshTimer = null;
 let researchPollTimer = null;
 const _shownCheckpoints = new Set();
+const _shownSelectionCheckpoints = new Set();
 const _shownErrors = new Set();
 
 // --- Error bar functions ---
@@ -311,8 +312,20 @@ async function refreshData() {
           if (key.startsWith(t.name + ':')) _shownCheckpoints.delete(key);
         }
       }
+      // Detect selection checkpoint: was running, now stopped with selection_checkpoint
+      if (wasRunning.has(t.name) && !t.running && t.selection_checkpoint) {
+        const selKey = t.name + ':selection';
+        if (!_shownSelectionCheckpoints.has(selKey)) {
+          _shownSelectionCheckpoints.add(selKey);
+          showSelectionModal(t);
+        }
+      }
+      // Clear shown selection checkpoint when agent is running again
+      if (t.running) {
+        _shownSelectionCheckpoints.delete(t.name + ':selection');
+      }
       // Detect error: was running, now stopped without checkpoint
-      if (wasRunning.has(t.name) && !t.running && !t.checkpoint) {
+      if (wasRunning.has(t.name) && !t.running && !t.checkpoint && !t.selection_checkpoint) {
         checkForErrors(t.name);
       }
       // Clear error bar when agent is running again
@@ -385,6 +398,87 @@ async function checkpointResume(name, btn) {
   await startAgent(name);
 }
 
+async function showSelectionModal(topic) {
+  const n = esc(topic.name);
+  const nameHtml = escHtml(topic.name);
+  // Fetch full idea list from selection checkpoint endpoint
+  let data;
+  try {
+    data = await api(`topics/${topic.name}/selection-checkpoint`);
+  } catch (e) { return; }
+  if (!data.active || !data.ideas || !data.ideas.length) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const ideaRows = data.ideas.map(idea => `
+    <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all 0.15s ease" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='transparent'">
+      <input type="checkbox" class="sel-idea-cb" value="${escHtml(idea.id)}" checked style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+      <span style="font-weight:600;color:var(--text2);min-width:28px">#${idea.rank}</span>
+      <span style="flex:1;font-weight:500">${escHtml(idea.title)}</span>
+      ${idea.score ? '<span style="font-size:12px;color:var(--text2);background:var(--bg3);border-radius:4px;padding:2px 6px">' + escHtml(idea.score) + '</span>' : ''}
+    </label>
+  `).join('');
+
+  overlay.innerHTML = `
+    <div class="modal" style="width:540px;max-height:80vh;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:rgba(79,70,229,0.12)">
+          <span style="color:var(--accent);font-size:18px">&#x2714;</span>
+        </span>
+        <div>
+          <h2 style="margin:0;font-size:17px">${escHtml(data.phase)} Complete</h2>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Select ideas for Execution Playbook</div>
+        </div>
+      </div>
+      <div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;margin-bottom:16px;padding-right:4px">
+        ${ideaRows}
+      </div>
+      <div class="modal-actions" style="display:flex;gap:8px;justify-content:space-between;align-items:center">
+        <div style="display:flex;gap:8px">
+          <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="toggleAllSelections(this, true)">Select All</button>
+          <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="toggleAllSelections(this, false)">Deselect All</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+          <button class="btn-primary" onclick="confirmSelection('${n}', this)">Confirm &amp; Resume</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function toggleAllSelections(btn, checked) {
+  const modal = btn.closest('.modal');
+  modal.querySelectorAll('.sel-idea-cb').forEach(cb => cb.checked = checked);
+}
+
+async function confirmSelection(name, btn) {
+  const modal = btn.closest('.modal');
+  const checkboxes = modal.querySelectorAll('.sel-idea-cb:checked');
+  const selectedIds = Array.from(checkboxes).map(cb => cb.value);
+  if (!selectedIds.length) {
+    alert('Please select at least one idea.');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  try {
+    await api(`topics/${name}/selection-checkpoint/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selected_idea_ids: selectedIds }),
+    });
+    btn.closest('.modal-overlay').remove();
+    _shownSelectionCheckpoints.delete(name + ':selection');
+    await startAgent(name);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Confirm & Resume';
+    alert('Failed to confirm selection: ' + e.message);
+  }
+}
+
 function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 
 function renderWelcome() {
@@ -425,7 +519,7 @@ function renderSidebar() {
       <div class="meta">
         <span>${t.cycles} cycles</span>
         <span>$${t.cost.toFixed(4)}</span>
-        ${t.running ? '<span style="color:var(--green)">running</span>' : (t.crashed ? '<span style="color:var(--red)">crashed</span>' : (t.checkpoint ? '<span style="color:var(--yellow)">checkpoint</span>' : ''))}
+        ${t.running ? '<span style="color:var(--green)">running</span>' : (t.crashed ? '<span style="color:var(--red)">crashed</span>' : (t.selection_checkpoint ? '<span style="color:var(--accent)">select ideas</span>' : (t.checkpoint ? '<span style="color:var(--yellow)">checkpoint</span>' : '')))}
       </div>
     </div>
   `}).join('');
@@ -476,6 +570,11 @@ function renderAgentControl() {
       <span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block;animation:pulse-red 1s ease-in-out infinite"></span>
       <span style="color:var(--red);font-size:12px;font-weight:600">Crashed</span>
       <button style="font-size:11px;background:var(--green);border:1px solid var(--green);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="startAgent('${n}')">Restart</button>
+    `;
+  } else if (t.selection_checkpoint) {
+    el.innerHTML = `
+      <span style="font-size:11px;background:var(--accent);color:#fff;border-radius:6px;padding:3px 8px;font-weight:600">Select Ideas</span>
+      <button style="font-size:11px;background:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="showSelectionModal(state.topics.find(t=>t.name==='${n}'))">Choose Ideas</button>
     `;
   } else if (t.checkpoint) {
     el.innerHTML = `
@@ -684,9 +783,11 @@ async function renderMonitor() {
       <h2 style="font-size:18px">${state.selected}</h2>
       ${isRunning
         ? '<span style="color:var(--green);font-size:13px;display:flex;align-items:center;gap:4px"><span class="running-dot" style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s ease-in-out infinite"></span> Running</span>'
-        : (topicData && topicData.checkpoint
-          ? '<span style="color:var(--yellow);font-size:13px;font-weight:600">Paused — ' + topicData.checkpoint.label + ' checkpoint</span>'
-          : '<span style="color:var(--text2);font-size:13px">Stopped</span>')
+        : (topicData && topicData.selection_checkpoint
+          ? '<span style="color:var(--accent);font-size:13px;font-weight:600">Select Ideas for Playbook</span>'
+          : (topicData && topicData.checkpoint
+            ? '<span style="color:var(--yellow);font-size:13px;font-weight:600">Paused — ' + topicData.checkpoint.label + ' checkpoint</span>'
+            : '<span style="color:var(--text2);font-size:13px">Stopped</span>'))
       }
     </div>
     <div class="stats-grid">

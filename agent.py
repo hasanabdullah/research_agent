@@ -77,6 +77,8 @@ def load_agent_config(topic_name: str) -> dict:
     merged["active_topic"] = topic_name
     if "budget" in agent_cfg:
         merged["budget"] = agent_cfg["budget"]
+    if "research_buckets" in agent_cfg:
+        merged["research_buckets"] = agent_cfg["research_buckets"]
     return merged
 
 
@@ -364,6 +366,150 @@ def list_research_files(paths: dict = None) -> str:
     return "\n".join(lines)
 
 
+def _build_phase_guidance(config: dict, paths: dict) -> str:
+    """Build dynamic phase budget tracker that tells the agent which phase to work on.
+
+    Uses weighted allocation: later phases get proportionally more budget because
+    they read all prior research files (growing context = higher per-cycle cost)
+    and produce the highest-value deliverables.
+    """
+    buckets = config.get("research_buckets", [])
+    if not buckets:
+        return ""
+
+    max_budget = config.get("budget", {}).get("max_total_usd", 100.0)
+    costs_file = paths["costs_file"] if paths else None
+    cost_info = get_summary(costs_file)
+    spent = cost_info["total_usd"]
+    remaining = max(0, max_budget - spent)
+    research_dir = paths["research_dir"] if paths else ROOT / "data" / "research"
+
+    # Classify each phase as complete or incomplete based on file sizes
+    phases = []
+    for bucket in buckets:
+        name = bucket["name"]
+        files = bucket.get("files", [])
+        weight = bucket.get("weight", 1.0)
+        min_budget = bucket.get("min_budget_usd", 0.0)
+        md_files = [f for f in files if f.endswith(".md")]
+        target_file = md_files[0] if md_files else (files[0] if files else None)
+
+        # Check if phase has substantial content (>2KB = real content)
+        max_size = 0
+        for fn in files:
+            fpath = research_dir / fn
+            if fpath.exists():
+                max_size = max(max_size, fpath.stat().st_size)
+
+        phases.append({
+            "name": name,
+            "target_file": target_file,
+            "max_size": max_size,
+            "complete": max_size > 2048,
+            "weight": weight,
+            "min_budget": min_budget,
+        })
+
+    # Find current phase (first incomplete)
+    current_idx = None
+    for i, p in enumerate(phases):
+        if not p["complete"]:
+            current_idx = i
+            break
+
+    # --- Weighted budget allocation ---
+    # Compute target for ALL phases based on full budget (for display)
+    total_weight = sum(p["weight"] for p in phases)
+    for p in phases:
+        p["target"] = (p["weight"] / total_weight) * max_budget if total_weight > 0 else 0
+
+    # For incomplete phases, allocate the *remaining* budget by weight
+    incomplete = [p for p in phases if not p["complete"]]
+    if incomplete:
+        inc_total_weight = sum(p["weight"] for p in incomplete)
+
+        # First pass: proportional allocation
+        for p in incomplete:
+            p["allocation"] = (p["weight"] / inc_total_weight) * remaining if inc_total_weight > 0 else 0
+
+        # Second pass: enforce minimums — if budget is tight, scale minimums proportionally
+        total_min = sum(p["min_budget"] for p in incomplete)
+        if total_min > remaining and total_min > 0:
+            # Not enough budget to meet all minimums — scale them down
+            scale = remaining / total_min
+            for p in incomplete:
+                p["allocation"] = p["min_budget"] * scale
+        else:
+            # Enough budget — clamp up to minimums and redistribute surplus
+            clamped = []
+            unclamped = []
+            surplus = 0.0
+            for p in incomplete:
+                if p["allocation"] < p["min_budget"]:
+                    surplus += p["min_budget"] - p["allocation"]
+                    p["allocation"] = p["min_budget"]
+                    clamped.append(p)
+                else:
+                    unclamped.append(p)
+            # Take surplus from unclamped phases proportionally
+            if surplus > 0 and unclamped:
+                unc_weight = sum(p["weight"] for p in unclamped)
+                for p in unclamped:
+                    share = (p["weight"] / unc_weight) * surplus if unc_weight > 0 else 0
+                    p["allocation"] = max(p["min_budget"], p["allocation"] - share)
+    else:
+        for p in phases:
+            p["allocation"] = 0.0
+
+    # For complete phases, allocation is 0 (already spent)
+    for p in phases:
+        if p["complete"]:
+            p["allocation"] = 0.0
+
+    # Build the tracker text
+    lines = [
+        "## Phase Budget Tracker",
+        f"Total budget: ${max_budget:.2f} | Spent: ${spent:.2f} | Remaining: ${remaining:.2f}",
+        "",
+    ]
+
+    for i, p in enumerate(phases):
+        if p["complete"]:
+            lines.append(f"{p['name']} — COMPLETE ({p['max_size']} bytes, target ${p['target']:.2f})")
+        elif i == current_idx:
+            lines.append(f"{p['name']} — CURRENT | Target: ${p['target']:.2f} | Remaining: ${p['allocation']:.2f}")
+            lines.append(f"  Target file: {p['target_file']}")
+        else:
+            lines.append(f"{p['name']} — QUEUED | Target: ${p['target']:.2f}")
+
+    # Add directive
+    lines.append("")
+    if current_idx is not None:
+        current = phases[current_idx]
+        completed_phases = [p for p in phases if p["complete"]]
+        if completed_phases and current_idx > 0:
+            prev = phases[current_idx - 1]
+            lines.append(f">>> ACTION REQUIRED: Start {current['name']} NOW.")
+            lines.append(f">>> Write to: {current['target_file']}")
+            lines.append(f">>> Do NOT continue writing to {prev['target_file']}.")
+        else:
+            lines.append(f">>> CURRENT TASK: Work on {current['name']}.")
+            lines.append(f">>> Write to: {current['target_file']}")
+        lines.append(f">>> Budget remaining for this phase: ${current['allocation']:.2f}")
+    else:
+        lines.append(">>> All phases complete!")
+
+    return "\n".join(lines)
+
+
+def _extract_phase_directive(phase_guidance: str) -> str:
+    """Extract >>> directive lines from phase guidance for end-of-context emphasis."""
+    directives = [ln.lstrip("> ") for ln in phase_guidance.splitlines() if ln.startswith(">>>")]
+    if not directives:
+        return ""
+    return "## PHASE DIRECTIVE (HIGHEST PRIORITY)\n" + "\n".join(directives) + "\n"
+
+
 def build_context(identity: dict, config: dict, paths: dict = None) -> str:
     """Build the context string the agent sees at the start of each cycle."""
     cycle_num = get_cycle_count(paths) + 1
@@ -383,12 +529,14 @@ def build_context(identity: dict, config: dict, paths: dict = None) -> str:
     costs_file = paths["costs_file"] if paths else None
     cost_info = get_summary(costs_file)
     mission = load_mission(paths)
+    phase_guidance = _build_phase_guidance(config, paths) if paths else ""
 
     return (
         f"You are {identity['name']} v{identity['version']}, a research agent.\n"
         f"Cycle: {cycle_num}\n"
         f"Budget: ${cost_info['total_usd']:.4f} spent of ${config.get('budget', {}).get('max_total_usd', 100.0):.2f} total\n\n"
-        f"## Mission\n{mission}\n\n"
+        + (f"{phase_guidance}\n\n" if phase_guidance else "")
+        + f"## Mission\n{mission}\n\n"
         f"## Your source files\n{files}\n\n"
         f"## Your research files\n{research_files}\n\n"
         f"## Recent git history\n{git_history}\n\n"
@@ -401,7 +549,8 @@ def build_context(identity: dict, config: dict, paths: dict = None) -> str:
         f"IMPORTANT: Use `append_to_file` for adding to existing files — it preserves all existing content.\n"
         f"Only use `propose_edit` when creating a brand new file.\n"
         f"Focus on depth over breadth. One well-analyzed insight is worth ten bullet points.\n"
-        f"You cannot modify protected files: {', '.join(config.get('protected_files', []))}\n"
+        f"You cannot modify protected files: {', '.join(config.get('protected_files', []))}\n\n"
+        + (_extract_phase_directive(phase_guidance) if phase_guidance else "")
     )
 
 

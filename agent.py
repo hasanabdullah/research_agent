@@ -549,9 +549,10 @@ def _build_phase_guidance(config: dict, paths: dict) -> str:
 
 
 def _extract_ideas(research_dir: Path) -> list[dict]:
-    """Parse top_ideas.md for ## IDEA #N: Title headers.
+    """Parse top_ideas.md for ## IDEA #N: Title headers with descriptions.
 
-    Returns a list of dicts with id, rank, title, and score fields.
+    Returns a list of dicts with id, rank, title, score, industry,
+    what_it_is, and problem fields.
     """
     import re
     ideas_file = research_dir / "top_ideas.md"
@@ -559,26 +560,79 @@ def _extract_ideas(research_dir: Path) -> list[dict]:
         return []
 
     content = ideas_file.read_text(encoding="utf-8")
+    lines = content.splitlines()
+
     # Match headers like: ## IDEA #1: QuoteFlow AI — Commercial Insurance Quoting (8/8)
-    pattern = re.compile(
+    header_pattern = re.compile(
         r'^## IDEA\s*#(\d+)\s*:\s*(.+?)(?:\s*\((\d+)/(\d+)\))?\s*$',
-        re.MULTILINE,
     )
+    # Match metadata line: **Rank: #4 | Score: 8/8 | Industry: Accounting**
+    meta_pattern = re.compile(
+        r'^\*\*Rank:.*?Score:\s*(\d+/\d+).*?Industry:\s*(.+?)\*\*\s*$',
+    )
+
+    # Find all idea header line numbers
+    idea_starts = []
+    for i, line in enumerate(lines):
+        m = header_pattern.match(line)
+        if m:
+            idea_starts.append((i, m))
+
     ideas = []
-    for m in pattern.finditer(content):
+    for idx, (start_line, m) in enumerate(idea_starts):
         rank = int(m.group(1))
         title = m.group(2).strip()
         score_num = m.group(3)
         score_den = m.group(4)
         score = f"{score_num}/{score_den}" if score_num and score_den else ""
+
+        # Determine the block of text for this idea (until next ## IDEA or EOF)
+        end_line = idea_starts[idx + 1][0] if idx + 1 < len(idea_starts) else len(lines)
+        block = lines[start_line:end_line]
+
+        # Extract industry and score from metadata line
+        industry = ""
+        for bl in block[:3]:
+            mm = meta_pattern.match(bl)
+            if mm:
+                score = score or mm.group(1)
+                industry = mm.group(2).strip()
+                break
+
+        # Extract ### sections
+        what_it_is = _extract_section(block, "What It Is")
+        problem = _extract_section(block, "Problem Solved")
+
         ideas.append({
             "id": f"idea_{rank}",
             "rank": rank,
             "title": title,
             "score": score,
+            "industry": industry,
+            "what_it_is": what_it_is,
+            "problem": problem,
         })
     ideas.sort(key=lambda x: x["rank"])
     return ideas
+
+
+def _extract_section(block: list[str], heading_prefix: str) -> str:
+    """Extract the first paragraph after a ### heading that starts with heading_prefix."""
+    capturing = False
+    paragraphs = []
+    for line in block:
+        if line.startswith("### ") and heading_prefix in line:
+            capturing = True
+            continue
+        if capturing:
+            if line.startswith("### ") or line.startswith("## "):
+                break
+            stripped = line.strip()
+            if stripped:
+                paragraphs.append(stripped)
+            elif paragraphs:
+                break  # stop at first blank line after content
+    return " ".join(paragraphs)[:300]
 
 
 def _extract_phase_directive(phase_guidance: str) -> str:

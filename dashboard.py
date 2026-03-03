@@ -171,6 +171,7 @@ def _topic_summary(name: str, active_topic: str) -> dict:
     # Checkpoint state
     cp_file = ROOT / "topics" / name / "data" / "checkpoints.json"
     checkpoint = None
+    selection_checkpoint = None
     if cp_file.exists():
         cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
         cp_hit = cp_data.get("checkpoints_hit", [])
@@ -181,6 +182,14 @@ def _topic_summary(name: str, active_topic: str) -> dict:
                 "label": f"{int(last_cp * 100)}%",
                 "checkpoints_hit": cp_hit,
             }
+        # Selection checkpoint
+        sc = cp_data.get("selection_checkpoint")
+        if sc and not sc.get("confirmed") and not running:
+            selection_checkpoint = {
+                "phase": sc.get("phase", ""),
+                "idea_count": len(sc.get("ideas", [])),
+                "timestamp": sc.get("timestamp", ""),
+            }
 
     return {
         "name": name,
@@ -190,6 +199,7 @@ def _topic_summary(name: str, active_topic: str) -> dict:
         "running": running,
         "budget": agent_budget,
         "checkpoint": checkpoint,
+        "selection_checkpoint": selection_checkpoint,
     }
 
 

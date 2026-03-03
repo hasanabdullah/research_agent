@@ -318,8 +318,19 @@ def handle_append_to_file(path: str, content: str, reasoning: str) -> str:
 
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    # Read existing content
+    # Read existing content — check pending patches first so sequential
+    # appends within a single cycle build on each other instead of each
+    # one starting from the on-disk file (which hasn't been updated yet).
     existing = target.read_text(encoding="utf-8") if target.exists() else ""
+    patches_dir = _paths["patches_dir"]
+    if patches_dir.exists():
+        for pf in sorted(patches_dir.glob("*.patch")):
+            try:
+                pd = json.loads(pf.read_text(encoding="utf-8"))
+                if pd.get("status") == "pending" and pd.get("path") == path:
+                    existing = pd["new_content"]
+            except Exception:
+                pass
 
     # Ensure separator between existing and new content
     separator = "\n\n" if existing and not existing.endswith("\n\n") else "\n" if existing and not existing.endswith("\n") else ""

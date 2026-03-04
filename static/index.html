@@ -1057,10 +1057,7 @@ async function renderMission() {
 async function renderConfigure() {
   const el = document.getElementById('content');
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
-  const [notionCfg, llmCfg] = await Promise.all([
-    fetch('/api/notion/config').then(r => r.json()).catch(() => ({ token_set: false, token_masked: '', root_page_id: '', hub_database_id: '' })),
-    fetch('/api/llm/config').then(r => r.json()).catch(() => ({ provider: '', api_key_set: false, api_key_masked: '' }))
-  ]);
+  const llmCfg = await fetch('/api/llm/config').then(r => r.json()).catch(() => ({ provider: '', api_key_set: false, api_key_masked: '' }));
 
   // Get current per-agent budget (only if a topic is selected)
   let budgetHtml = '';
@@ -1087,14 +1084,6 @@ async function renderConfigure() {
     </div>`;
   }
 
-  const notionConnected = notionCfg.token_set && notionCfg.root_page_id;
-  const statusDot = notionConnected
-    ? '<span class="status-dot" style="background:var(--green)"></span>Connected'
-    : '<span class="status-dot" style="background:var(--red)"></span>Not configured';
-  const hubLink = notionCfg.hub_database_id
-    ? `<a href="https://notion.so/${notionCfg.hub_database_id.replace(/-/g, '')}" target="_blank" style="color:var(--accent);font-size:12px;margin-left:12px">Open Hub Database</a>`
-    : '';
-
   const llmProviders = ['openrouter', 'anthropic', 'openai', 'gemini'];
   const curProvider = (llmCfg.provider || '').toLowerCase();
   const providerOptions = llmProviders.map(p =>
@@ -1118,42 +1107,7 @@ async function renderConfigure() {
       </div>
       <button class="save-btn" id="llm-config-btn" onclick="saveLlmConfig(this)">Save LLM Config</button>
     </div>
-    <div class="config-section">
-      <h3>Notion Integration</h3>
-      <div style="display:flex;align-items:center;margin-bottom:12px;font-size:13px">
-        ${statusDot}${hubLink}
-      </div>
-      <div style="margin-bottom:8px">
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Token</label>
-        <input type="password" id="notion-token" placeholder="${notionCfg.token_masked || 'ntn_...'}" />
-      </div>
-      <div style="margin-bottom:8px">
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Root Page ID</label>
-        <input type="text" id="notion-root-page" value="${escHtml(notionCfg.root_page_id || '')}" placeholder="Paste the Notion page ID" />
-      </div>
-      <button class="save-btn" id="notion-config-btn" onclick="saveNotionConfig(this)">Save Notion Config</button>
-    </div>
   `;
-}
-
-async function saveNotionConfig(btn) {
-  const token = document.getElementById('notion-token').value;
-  const rootPageId = document.getElementById('notion-root-page').value.trim();
-  const body = {};
-  if (token) body.token = token;
-  if (rootPageId) body.root_page_id = rootPageId;
-  try {
-    await fetch('/api/notion/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    btn.textContent = 'Saved!'; btn.classList.add('saved');
-    setTimeout(() => { btn.textContent = 'Save Notion Config'; btn.classList.remove('saved'); }, 1500);
-    renderConfigure();
-  } catch (e) {
-    alert('Failed to save: ' + e.message);
-  }
 }
 
 async function saveLlmConfig(btn) {

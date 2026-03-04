@@ -1407,10 +1407,10 @@ def _save_notion_config(notion_cfg: dict):
     snippet = "\n".join(lines)
 
     # Replace existing notion: block or append
-    if re.search(r"^notion:\s*$", text, re.MULTILINE):
+    if re.search(r"^notion:\s*\r?$", text, re.MULTILINE):
         # Remove the old notion block (notion: line + indented lines following it)
         text = re.sub(
-            r"^notion:\s*\n(?:[ \t]+\S.*\n?)*",
+            r"^notion:\s*\r?\n(?:[ \t]+\S.*\r?\n?)*",
             snippet + "\n",
             text,
             flags=re.MULTILINE,
@@ -1825,9 +1825,9 @@ def _save_llm_config(llm_cfg: dict):
         lines.append(f'  {key}: "{val}"')
     snippet = "\n".join(lines)
 
-    if re.search(r"^llm:\s*$", text, re.MULTILINE):
+    if re.search(r"^llm:\s*\r?$", text, re.MULTILINE):
         text = re.sub(
-            r"^llm:\s*\n(?:[ \t]+\S.*\n?)*",
+            r"^llm:\s*\r?\n(?:[ \t]+\S.*\r?\n?)*",
             snippet + "\n",
             text,
             flags=re.MULTILINE,
@@ -1915,9 +1915,9 @@ def _save_reddit_config(reddit_cfg: dict):
         lines.append(f'  {key}: "{val}"')
     snippet = "\n".join(lines)
 
-    if re.search(r"^reddit:\s*$", text, re.MULTILINE):
+    if re.search(r"^reddit:\s*\r?$", text, re.MULTILINE):
         text = re.sub(
-            r"^reddit:\s*\n(?:[ \t]+\S.*\n?)*",
+            r"^reddit:\s*\r?\n(?:[ \t]+\S.*\r?\n?)*",
             snippet + "\n",
             text,
             flags=re.MULTILINE,
@@ -1977,9 +1977,9 @@ def _save_newsapi_config(newsapi_cfg: dict):
         lines.append(f'  {key}: "{val}"')
     snippet = "\n".join(lines)
 
-    if re.search(r"^newsapi:\s*$", text, re.MULTILINE):
+    if re.search(r"^newsapi:\s*\r?$", text, re.MULTILINE):
         text = re.sub(
-            r"^newsapi:\s*\n(?:[ \t]+\S.*\n?)*",
+            r"^newsapi:\s*\r?\n(?:[ \t]+\S.*\r?\n?)*",
             snippet + "\n",
             text,
             flags=re.MULTILINE,

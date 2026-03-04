@@ -210,7 +210,6 @@
     <div class="tab active" data-tab="insights" onclick="switchTab('insights')">Insights</div>
     <div class="tab" data-tab="monitor" onclick="switchTab('monitor')">Monitor</div>
     <div class="tab" data-tab="research" onclick="switchTab('research')">Research Output</div>
-    <div class="tab" data-tab="mission" onclick="switchTab('mission')">Mission</div>
     <div class="tab" data-tab="configure" onclick="switchTab('configure')">Configure</div>
     <div id="agent-control" style="display:flex;align-items:center;gap:8px;margin-left:4px"></div>
   </div>
@@ -652,7 +651,6 @@ function switchTab(tab) {
   if (tab === 'insights') renderInsights();
   else if (tab === 'monitor') renderMonitor();
   else if (tab === 'research') renderResearch();
-  else if (tab === 'mission') renderMission();
 }
 
 // --- Insights ---
@@ -1230,28 +1228,6 @@ async function viewFile(name) {
 }
 
 // --- Mission ---
-async function renderMission() {
-  const el = document.getElementById('content');
-  el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
-  const [mission, prompt] = await Promise.all([
-    api(`topics/${state.selected}/mission`),
-    api(`topics/${state.selected}/prompt`)
-  ]);
-
-  el.innerHTML = `
-    <div class="config-section">
-      <h3>mission.md</h3>
-      <textarea id="mission-editor">${escHtml(mission.content)}</textarea>
-      <button class="save-btn" onclick="saveMission(this)">Save Mission</button>
-    </div>
-    <div class="config-section">
-      <h3>Agent Parameters</h3>
-      <textarea id="prompt-editor">${escHtml(prompt.content)}</textarea>
-      <button class="save-btn" onclick="savePrompt(this)">Save Parameters</button>
-    </div>
-  `;
-}
-
 // --- Configure ---
 async function renderConfigure() {
   const el = document.getElementById('content');
@@ -1289,6 +1265,29 @@ async function renderConfigure() {
     `<option value="${p}" ${p === curProvider ? 'selected' : ''}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`
   ).join('');
 
+  // Agent Configuration section (mission + agent parameters)
+  let agentConfigHtml = '';
+  if (state.selected) {
+    const [mission, prompt] = await Promise.all([
+      api(`topics/${state.selected}/mission`),
+      api(`topics/${state.selected}/prompt`)
+    ]);
+    agentConfigHtml = `
+    <div class="config-section">
+      <h3>Agent Configuration</h3>
+      <div style="margin-bottom:16px">
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Research Objective</label>
+        <textarea id="mission-editor">${escHtml(mission.content)}</textarea>
+        <button class="save-btn" onclick="saveMission(this)">Save Research Objective</button>
+      </div>
+      <div>
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Agent Parameters</label>
+        <textarea id="prompt-editor">${escHtml(prompt.content)}</textarea>
+        <button class="save-btn" onclick="savePrompt(this)">Save Parameters</button>
+      </div>
+    </div>`;
+  }
+
   el.innerHTML = `
     ${budgetHtml}
     <div class="config-section">
@@ -1306,6 +1305,7 @@ async function renderConfigure() {
       </div>
       <button class="save-btn" id="llm-config-btn" onclick="saveLlmConfig(this)">Save LLM Config</button>
     </div>
+    ${agentConfigHtml}
   `;
 }
 
@@ -1351,7 +1351,7 @@ async function saveMission(btn) {
     body: JSON.stringify({ content })
   });
   btn.textContent = 'Saved!'; btn.classList.add('saved');
-  setTimeout(() => { btn.textContent = 'Save Mission'; btn.classList.remove('saved'); }, 1500);
+  setTimeout(() => { btn.textContent = 'Save Research Objective'; btn.classList.remove('saved'); }, 1500);
 }
 
 async function savePrompt(btn) {
@@ -1456,7 +1456,7 @@ async function createTopic() {
     });
     document.querySelector('.modal-overlay').remove();
     await load();
-    state.tab = 'mission';
+    state.tab = 'configure';
     selectTopic(name);
   } catch (e) {
     alert('Failed to create agent: ' + e.message);

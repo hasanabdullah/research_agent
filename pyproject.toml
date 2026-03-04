@@ -11,6 +11,7 @@ dependencies = [
     "ddgs>=8.0",
     "requests>=2.31",
     "beautifulsoup4>=4.12",
+    "youtube-transcript-api>=0.6",
     "fastapi>=0.100",
     "uvicorn[standard]>=0.20",
 ]

@@ -7,10 +7,18 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import re as _re
+
 import requests
 import yaml
 from bs4 import BeautifulSoup
 from ddgs import DDGS
+
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+    _YT_AVAILABLE = True
+except ImportError:
+    _YT_AVAILABLE = False
 
 ROOT = Path(__file__).parent
 
@@ -207,6 +215,32 @@ TOOL_DEFINITIONS = [
                     },
                 },
                 "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "youtube_transcript",
+            "description": (
+                "Fetch the transcript of a YouTube video given its URL or video ID. "
+                "Returns the full text transcript with timestamps. Use this to extract "
+                "detailed information from YouTube videos, talks, interviews, and tutorials. "
+                "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "video": {
+                        "type": "string",
+                        "description": "YouTube video URL (e.g. https://www.youtube.com/watch?v=xxx) or video ID",
+                    },
+                    "include_timestamps": {
+                        "type": "boolean",
+                        "description": "Whether to include timestamps (default false — plain text is more compact)",
+                    },
+                },
+                "required": ["video"],
             },
         },
     },
@@ -495,6 +529,54 @@ def handle_web_fetch(url: str, max_chars: int = 8000) -> str:
         return f"ERROR fetching {url}: {e}"
 
 
+def _extract_video_id(video: str) -> str | None:
+    """Extract YouTube video ID from a URL or bare ID."""
+    # Already a bare ID (11 chars, alphanumeric + - _)
+    if _re.fullmatch(r"[\w-]{11}", video):
+        return video
+    # Standard and short URLs
+    m = _re.search(r"(?:v=|youtu\.be/|/embed/|/shorts/)([\w-]{11})", video)
+    return m.group(1) if m else None
+
+
+def handle_youtube_transcript(video: str, include_timestamps: bool = False) -> str:
+    """Fetch a YouTube video transcript. Shares rate limit with web_fetch."""
+    if not _YT_AVAILABLE:
+        return "ERROR: youtube-transcript-api is not installed. Run: pip install youtube-transcript-api"
+
+    global _web_fetch_count
+    _web_fetch_count += 1
+    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+    video_id = _extract_video_id(video)
+    if not video_id:
+        return f"ERROR: Could not extract video ID from: {video}"
+
+    try:
+        transcript = list(YouTubeTranscriptApi().fetch(video_id))
+
+        if include_timestamps:
+            lines = []
+            for entry in transcript:
+                mins, secs = divmod(int(entry.start), 60)
+                lines.append(f"[{mins:02d}:{secs:02d}] {entry.text}")
+            text = "\n".join(lines)
+        else:
+            text = " ".join(entry.text for entry in transcript)
+
+        if len(text) > 15000:
+            text = text[:15000] + "\n\n[... truncated at 15000 chars]"
+
+        return f"Transcript for YouTube video {video_id}:\n\n{text}"
+
+    except Exception as e:
+        err = str(e)
+        if "disabled" in err.lower() or "no transcript" in err.lower():
+            return f"ERROR: No transcript available for video {video_id} (subtitles may be disabled)"
+        return f"ERROR fetching transcript for {video_id}: {e}"
+
+
 # --- Dispatcher ---
 
 TOOL_HANDLERS = {
@@ -505,6 +587,7 @@ TOOL_HANDLERS = {
     "reflect": lambda args: handle_reflect(args["observation"]),
     "web_search": lambda args: handle_web_search(args["query"], args.get("max_results", 5)),
     "web_fetch": lambda args: handle_web_fetch(args["url"], args.get("max_chars", 8000)),
+    "youtube_transcript": lambda args: handle_youtube_transcript(args["video"], args.get("include_timestamps", False)),
 }
 
 

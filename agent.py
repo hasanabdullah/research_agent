@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 from costs import check_budget, get_summary, get_total_usd, record_call
 from llm import get_client, resolve_model
 from supervisor import review_proposal
-from tools import TOOL_DEFINITIONS, dispatch_tool, reset_web_counters, set_paths, _resolve_file_path
+from tools import TOOL_DEFINITIONS, get_active_tools, dispatch_tool, reset_web_counters, set_paths, _resolve_file_path
 
 load_dotenv()
 
@@ -827,7 +827,7 @@ def run_cycle(config: dict) -> dict:
         response = client.chat.completions.create(
             model=resolve_model(config.get("model", "anthropic/claude-opus-4.6")),
             max_tokens=4096,
-            tools=TOOL_DEFINITIONS,
+            tools=get_active_tools(),
             messages=messages,
         )
 

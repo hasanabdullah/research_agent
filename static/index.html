@@ -1233,6 +1233,8 @@ async function renderConfigure() {
   const el = document.getElementById('content');
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
   const llmCfg = await fetch('/api/llm/config').then(r => r.json()).catch(() => ({ provider: '', api_key_set: false, api_key_masked: '' }));
+  const redditCfg = await fetch('/api/reddit/config').then(r => r.json()).catch(() => ({ client_id: '', configured: false, client_secret_masked: '' }));
+  const newsapiCfg = await fetch('/api/newsapi/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' }));
 
   // Get current per-agent budget (only if a topic is selected)
   let budgetHtml = '';
@@ -1305,6 +1307,32 @@ async function renderConfigure() {
       </div>
       <button class="save-btn" id="llm-config-btn" onclick="saveLlmConfig(this)">Save LLM Config</button>
     </div>
+    <div class="config-section">
+      <h3>Reddit API <span style="font-size:11px;font-weight:400;color:${redditCfg.configured ? '#22c55e' : 'var(--text2)'};margin-left:8px">${redditCfg.configured ? '&#x2713; Configured' : 'Not configured'}</span></h3>
+      <div style="margin-bottom:8px">
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Client ID</label>
+        <input type="text" id="reddit-client-id" placeholder="Enter Reddit client ID..." value="${escHtml(redditCfg.client_id || '')}" />
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Client Secret</label>
+        <input type="password" id="reddit-client-secret" placeholder="${redditCfg.client_secret_masked || 'Enter Reddit client secret...'}" />
+      </div>
+      <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
+        Create a Reddit app at <a href="https://www.reddit.com/prefs/apps" target="_blank" style="color:var(--accent)">reddit.com/prefs/apps</a> (select "script" type)
+      </div>
+      <button class="save-btn" id="reddit-config-btn" onclick="saveRedditConfig(this)">Save Reddit Config</button>
+    </div>
+    <div class="config-section">
+      <h3>NewsAPI <span style="font-size:11px;font-weight:400;color:${newsapiCfg.configured ? '#22c55e' : 'var(--text2)'};margin-left:8px">${newsapiCfg.configured ? '&#x2713; Configured' : 'Not configured'}</span></h3>
+      <div style="margin-bottom:8px">
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Key</label>
+        <input type="password" id="newsapi-key" placeholder="${newsapiCfg.api_key_masked || 'Enter NewsAPI key...'}" />
+      </div>
+      <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
+        Get a free API key at <a href="https://newsapi.org/register" target="_blank" style="color:var(--accent)">newsapi.org/register</a> (100 requests/day)
+      </div>
+      <button class="save-btn" id="newsapi-config-btn" onclick="saveNewsapiConfig(this)">Save NewsAPI Config</button>
+    </div>
     ${agentConfigHtml}
   `;
 }
@@ -1323,6 +1351,44 @@ async function saveLlmConfig(btn) {
     });
     btn.textContent = 'Saved!'; btn.classList.add('saved');
     setTimeout(() => { btn.textContent = 'Save LLM Config'; btn.classList.remove('saved'); }, 1500);
+    renderConfigure();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+async function saveRedditConfig(btn) {
+  const clientId = document.getElementById('reddit-client-id').value;
+  const clientSecret = document.getElementById('reddit-client-secret').value;
+  const body = {};
+  if (clientId) body.client_id = clientId;
+  if (clientSecret) body.client_secret = clientSecret;
+  try {
+    await fetch('/api/reddit/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    btn.textContent = 'Saved!'; btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'Save Reddit Config'; btn.classList.remove('saved'); }, 1500);
+    renderConfigure();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+async function saveNewsapiConfig(btn) {
+  const apiKey = document.getElementById('newsapi-key').value;
+  const body = {};
+  if (apiKey) body.api_key = apiKey;
+  try {
+    await fetch('/api/newsapi/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    btn.textContent = 'Saved!'; btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'Save NewsAPI Config'; btn.classList.remove('saved'); }, 1500);
     renderConfigure();
   } catch (e) {
     alert('Failed to save: ' + e.message);

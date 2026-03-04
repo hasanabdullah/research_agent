@@ -12,6 +12,9 @@ dependencies = [
     "requests>=2.31",
     "beautifulsoup4>=4.12",
     "youtube-transcript-api>=0.6",
+    "praw>=7.0",
+    "pytrends>=4.9",
+    "newsapi-python>=0.2",
     "fastapi>=0.100",
     "uvicorn[standard]>=0.20",
 ]

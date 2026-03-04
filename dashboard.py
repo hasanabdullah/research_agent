@@ -90,6 +90,15 @@ class SelectionConfirm(BaseModel):
     selected_idea_ids: list[str]
 
 
+class RedditConfig(BaseModel):
+    client_id: str = ""
+    client_secret: str = ""
+
+
+class NewsApiConfig(BaseModel):
+    api_key: str = ""
+
+
 # --- Helpers ---
 
 def _topic_dir(name: str) -> Path:
@@ -1830,6 +1839,129 @@ def api_put_llm_config(body: LlmConfig):
         "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
     }
     _save_llm_config(llm_cfg)
+    return {"status": "saved"}
+
+
+# --- Reddit config helpers & endpoints ---
+
+
+def _load_reddit_config() -> dict:
+    """Load Reddit config from config.yaml, falling back to env vars."""
+    cfg = load_config()
+    reddit = cfg.get("reddit", {}) or {}
+    client_id = reddit.get("client_id", "") or os.environ.get("REDDIT_CLIENT_ID", "")
+    client_secret = reddit.get("client_secret", "") or os.environ.get("REDDIT_CLIENT_SECRET", "")
+    return {"client_id": client_id, "client_secret": client_secret}
+
+
+def _save_reddit_config(reddit_cfg: dict):
+    """Upsert the reddit: block in config.yaml, preserving other content."""
+    cfg_path = ROOT / "config.yaml"
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+
+    lines = ["reddit:"]
+    for key in ("client_id", "client_secret"):
+        val = reddit_cfg.get(key, "")
+        lines.append(f'  {key}: "{val}"')
+    snippet = "\n".join(lines)
+
+    if re.search(r"^reddit:\s*$", text, re.MULTILINE):
+        text = re.sub(
+            r"^reddit:\s*\n(?:[ \t]+\S.*\n?)*",
+            snippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + snippet + "\n"
+
+    cfg_path.write_text(text, encoding="utf-8")
+
+
+@app.get("/api/reddit/config")
+def api_get_reddit_config():
+    """Return Reddit config with masked client_secret + configured flag."""
+    cfg = _load_reddit_config()
+    client_secret = cfg.get("client_secret", "")
+    masked = ""
+    if client_secret:
+        masked = client_secret[:4] + "..." + client_secret[-4:] if len(client_secret) > 8 else "***"
+    return {
+        "client_id": cfg.get("client_id", ""),
+        "client_secret_masked": masked,
+        "configured": bool(cfg.get("client_id") and cfg.get("client_secret")),
+    }
+
+
+@app.put("/api/reddit/config")
+def api_put_reddit_config(body: RedditConfig):
+    """Save Reddit client_id and client_secret to config.yaml."""
+    existing = _load_reddit_config()
+    reddit_cfg = {
+        "client_id": body.client_id if body.client_id else existing.get("client_id", ""),
+        "client_secret": body.client_secret if body.client_secret else existing.get("client_secret", ""),
+    }
+    _save_reddit_config(reddit_cfg)
+    return {"status": "saved"}
+
+
+# --- NewsAPI config helpers & endpoints ---
+
+
+def _load_newsapi_config() -> dict:
+    """Load NewsAPI config from config.yaml, falling back to env vars."""
+    cfg = load_config()
+    newsapi = cfg.get("newsapi", {}) or {}
+    api_key = newsapi.get("api_key", "") or os.environ.get("NEWSAPI_KEY", "")
+    return {"api_key": api_key}
+
+
+def _save_newsapi_config(newsapi_cfg: dict):
+    """Upsert the newsapi: block in config.yaml, preserving other content."""
+    cfg_path = ROOT / "config.yaml"
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+
+    lines = ["newsapi:"]
+    for key in ("api_key",):
+        val = newsapi_cfg.get(key, "")
+        lines.append(f'  {key}: "{val}"')
+    snippet = "\n".join(lines)
+
+    if re.search(r"^newsapi:\s*$", text, re.MULTILINE):
+        text = re.sub(
+            r"^newsapi:\s*\n(?:[ \t]+\S.*\n?)*",
+            snippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + snippet + "\n"
+
+    cfg_path.write_text(text, encoding="utf-8")
+
+
+@app.get("/api/newsapi/config")
+def api_get_newsapi_config():
+    """Return NewsAPI config with masked api_key + configured flag."""
+    cfg = _load_newsapi_config()
+    api_key = cfg.get("api_key", "")
+    masked = ""
+    if api_key:
+        masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+    return {
+        "api_key_masked": masked,
+        "configured": bool(api_key),
+    }
+
+
+@app.put("/api/newsapi/config")
+def api_put_newsapi_config(body: NewsApiConfig):
+    """Save NewsAPI api_key to config.yaml."""
+    existing = _load_newsapi_config()
+    newsapi_cfg = {
+        "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
+    }
+    _save_newsapi_config(newsapi_cfg)
     return {"status": "saved"}
 
 

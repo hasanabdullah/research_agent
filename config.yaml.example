@@ -43,6 +43,7 @@ notion:
   hub_database_id: ""
 
 # LLM provider & API key — set via dashboard Configure tab
+# Valid providers: openrouter, anthropic, openai, gemini
 llm:
   provider: ""
   api_key: ""

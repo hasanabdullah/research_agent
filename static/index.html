@@ -1093,7 +1093,7 @@ async function renderConfigure() {
     ? `<a href="https://notion.so/${notionCfg.hub_database_id.replace(/-/g, '')}" target="_blank" style="color:var(--accent);font-size:12px;margin-left:12px">Open Hub Database</a>`
     : '';
 
-  const llmProviders = ['openrouter', 'anthropic', 'openai'];
+  const llmProviders = ['openrouter', 'anthropic', 'openai', 'gemini'];
   const curProvider = (llmCfg.provider || '').toLowerCase();
   const providerOptions = llmProviders.map(p =>
     `<option value="${p}" ${p === curProvider ? 'selected' : ''}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`

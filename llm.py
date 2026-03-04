@@ -8,6 +8,7 @@ from openai import OpenAI
 PROVIDER_URLS = {
     "openrouter": "https://openrouter.ai/api/v1",
     "anthropic": "https://api.anthropic.com/v1/",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
 }
 
 
@@ -48,4 +49,6 @@ def resolve_model(model):
         model = model.split("/", 1)[1]
     if provider == "anthropic":
         model = model.replace(".", "-")
+    if provider == "gemini" and "/" in model:
+        model = model.split("/", 1)[1]
     return model

@@ -843,6 +843,8 @@ async function renderMonitor() {
 let _bucketsCache = null;
 
 async function renderResearch() {
+  // Skip re-render if user is editing a Notion page ID input
+  if (document.activeElement && document.activeElement.id && document.activeElement.id.startsWith('bucket-notion-')) return;
   const el = document.getElementById('content');
   let data;
   try {

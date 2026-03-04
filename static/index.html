@@ -636,30 +636,12 @@ async function renderInsights() {
   const el = document.getElementById('content');
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
 
-  const [files, existing, notionStatus] = await Promise.all([
+  const [files, existing] = await Promise.all([
     api(`topics/${state.selected}/research`),
     api(`topics/${state.selected}/summary`).catch(() => ({ summary: null, generated_at: null })),
-    api(`topics/${state.selected}/notion-status`).catch(() => ({ published: false, published_at: null, pages: [] }))
   ]);
 
   const hasResearch = files.length > 0 && files.some(f => f.size > 0);
-
-  const notionBtnLabel = notionStatus.published ? 'Re-publish' : 'Publish to Notion';
-  const hubLinkHtml = notionStatus.database_url
-    ? `<a href="${notionStatus.database_url}" target="_blank" style="color:var(--accent);font-weight:600;font-size:13px;margin-right:12px">Notion Hub</a>`
-    : '';
-  const notionLinksHtml = notionStatus.pages && notionStatus.pages.length > 0
-    ? `<div id="notion-links" class="identity-section" style="margin-top:16px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <h3 style="margin:0">${hubLinkHtml}Notion</h3>
-          <span style="font-size:11px;color:var(--text2)">Published ${formatTimestamp(notionStatus.published_at)}</span>
-        </div>
-        ${notionStatus.topic_url ? `<div style="margin-bottom:8px"><a href="${notionStatus.topic_url}" target="_blank" style="color:var(--accent);font-weight:500;font-size:13px">${escHtml(state.selected)} — topic row</a></div>` : ''}
-        <div style="display:flex;flex-wrap:wrap;gap:6px">${notionStatus.pages.map(p =>
-          `<a href="${p.url}" target="_blank" style="display:inline-block;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text);text-decoration:none;font-family:var(--mono)">${escHtml(p.file.replace('.md',''))}</a>`
-        ).join('')}</div>
-      </div>`
-    : '<div id="notion-links"></div>';
 
   if (existing.summary) {
     el.innerHTML = `
@@ -669,7 +651,6 @@ async function renderInsights() {
           <div id="summary-timestamp" style="font-size:12px;color:var(--text2)">Last summarized: ${formatTimestamp(existing.generated_at)}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="save-btn" id="notion-btn" onclick="publishToNotion()" style="margin:0;background:#000">${notionBtnLabel}</button>
           <button class="save-btn" id="summarize-btn" onclick="summarizeTopic()" style="margin:0">Re-summarize</button>
         </div>
       </div>
@@ -678,18 +659,15 @@ async function renderInsights() {
           <div class="md-content">${renderMd(existing.summary)}</div>
         </div>
       </div>
-      ${notionLinksHtml}
     `;
   } else if (hasResearch) {
     el.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px">
         <div style="color:var(--text2);font-size:15px">No summary yet for <strong style="color:var(--text)">${state.selected}</strong></div>
         <div style="display:flex;gap:8px">
-          <button class="save-btn" id="notion-btn" onclick="publishToNotion()" style="margin:0;font-size:14px;padding:10px 24px;background:#000">${notionBtnLabel}</button>
           <button class="save-btn" id="summarize-btn" onclick="summarizeTopic()" style="margin:0;font-size:14px;padding:10px 24px">Summarize Research</button>
         </div>
       </div>
-      ${notionLinksHtml}
       <div id="summary-area"></div>
       <div id="summary-timestamp" style="display:none"></div>
     `;
@@ -725,46 +703,6 @@ async function summarizeTopic() {
   }
 }
 
-async function publishToNotion() {
-  const btn = document.getElementById('notion-btn');
-  const linksEl = document.getElementById('notion-links');
-  btn.disabled = true;
-  btn.textContent = 'Publishing...';
-
-  try {
-    const result = await api(`topics/${state.selected}/publish-to-notion`, { method: 'POST' });
-    const ok = result.results.filter(r => r.status === 'ok');
-    const errs = result.results.filter(r => r.status === 'error');
-
-    const hubLink = result.database_url
-      ? `<a href="${result.database_url}" target="_blank" style="color:var(--accent);font-weight:600;font-size:13px;margin-right:12px">Notion Hub</a>`
-      : '';
-    let html = `<div class="identity-section" style="margin-top:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <h3 style="margin:0">${hubLink}Notion</h3>
-        <span style="font-size:11px;color:var(--text2)">Published ${formatTimestamp(result.published_at)}</span>
-      </div>`;
-    if (result.topic_url) {
-      html += `<div style="margin-bottom:8px"><a href="${result.topic_url}" target="_blank" style="color:var(--accent);font-weight:500;font-size:13px">${escHtml(state.selected)} — topic row</a></div>`;
-    }
-    if (ok.length) {
-      html += `<div style="display:flex;flex-wrap:wrap;gap:6px">${ok.map(r =>
-        `<a href="${r.url}" target="_blank" style="display:inline-block;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text);text-decoration:none;font-family:var(--mono)">${escHtml(r.file.replace('.md',''))}</a>`
-      ).join('')}</div>`;
-    }
-    if (errs.length) {
-      html += `<div style="color:var(--red);margin-top:8px;font-size:12px">Failed: ${errs.map(r => escHtml(r.file)).join(', ')}</div>`;
-    }
-    html += '</div>';
-    linksEl.innerHTML = html;
-    btn.textContent = 'Re-publish';
-    btn.disabled = false;
-  } catch (e) {
-    linksEl.innerHTML = `<div style="color:var(--red);margin-top:8px;font-size:13px">Publish failed: ${escHtml(e.message)}</div>`;
-    btn.textContent = 'Publish to Notion';
-    btn.disabled = false;
-  }
-}
 
 // --- Monitor ---
 async function renderMonitor() {

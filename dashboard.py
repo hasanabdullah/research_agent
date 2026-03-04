@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -184,11 +185,22 @@ def _topic_summary(name: str, active_topic: str) -> dict:
             }
         # Selection checkpoint
         sc = cp_data.get("selection_checkpoint")
-        if sc and not sc.get("confirmed") and not running:
+        if sc and not running:
+            # Check if Phase 5 already ran by looking for execution_playbook cycles
+            phase5_ran = False
+            cycles_file = paths.get("cycles_file")
+            if cycles_file and cycles_file.exists():
+                try:
+                    ctext = cycles_file.read_text(encoding="utf-8")
+                    phase5_ran = "execution_playbook" in ctext
+                except Exception:
+                    pass
             selection_checkpoint = {
                 "phase": sc.get("phase", ""),
                 "idea_count": len(sc.get("ideas", [])),
                 "timestamp": sc.get("timestamp", ""),
+                "confirmed": bool(sc.get("confirmed")),
+                "phase5_ran": phase5_ran,
             }
 
     return {
@@ -616,6 +628,39 @@ def api_costs(name: str):
     }
 
 
+@app.get("/api/topics/{name}/spend-history")
+def api_spend_history(name: str):
+    """Return cumulative spend points from cycles.jsonl for charting, with phase info."""
+    paths = _paths_for(name)
+    cycles_file = paths["cycles_file"]
+    points = []
+    if cycles_file.exists():
+        try:
+            for line in cycles_file.read_text(encoding="utf-8").strip().split("\n"):
+                if not line:
+                    continue
+                rec = json.loads(line)
+                t = rec.get("timestamp", "")
+                cost = rec.get("cost_after", 0)
+                if t and cost is not None:
+                    # Extract phase from summary (file being written to)
+                    summary = rec.get("summary", "")
+                    phase = ""
+                    m = re.search(r"data/research/(\w+)\.md", summary)
+                    if m:
+                        phase = m.group(1).replace("_", " ").title()
+                    elif rec.get("action") == "reflect":
+                        phase = "Reflect"
+                    elif rec.get("action") in ("checkpoint_review", "selection_checkpoint"):
+                        phase = "Checkpoint"
+                    elif rec.get("action") == "budget_stop":
+                        phase = "Budget Stop"
+                    points.append({"t": t, "cost": round(cost, 6), "phase": phase})
+        except Exception:
+            pass
+    return {"points": points}
+
+
 # --- Error detection ---
 
 _ERROR_PATTERNS = [
@@ -715,6 +760,188 @@ def api_topic_errors(name: str):
             timestamp = datetime.now(timezone.utc).isoformat()
 
     return {"has_error": has_error, "message": message, "timestamp": timestamp}
+
+
+@app.get("/api/topics/{name}/health")
+def api_health(name: str):
+    """Full issue history: scans all cycles + logs for every issue that occurred."""
+    _topic_dir(name)
+    paths = _paths_for(name)
+    issues: list[dict] = []
+
+    # --- Load all cycles first (needed to correlate log errors to costs) ---
+    cycles_file = paths["cycles_file"]
+    all_cycles: list[dict] = []
+    if cycles_file.exists():
+        try:
+            raw_lines = [l for l in cycles_file.read_text(encoding="utf-8").strip().split("\n") if l]
+            all_cycles = [json.loads(l) for l in raw_lines]
+        except Exception:
+            pass
+
+    def _nearest_cost(ts_str: str) -> float | None:
+        """Find the cost_after of the cycle closest to a timestamp."""
+        if not all_cycles or not ts_str:
+            return None
+        try:
+            from datetime import datetime as _dt
+            # Parse just the date+time portion
+            ts_clean = ts_str.replace("T", " ")[:19]
+            target = _dt.strptime(ts_clean, "%Y-%m-%d %H:%M:%S")
+            best, best_diff = None, None
+            for c in all_cycles:
+                ct = c.get("timestamp", "")
+                if not ct:
+                    continue
+                ct_clean = ct.replace("T", " ")[:19]
+                try:
+                    ct_dt = _dt.strptime(ct_clean, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    continue
+                diff = abs((ct_dt - target).total_seconds())
+                if best_diff is None or diff < best_diff:
+                    best_diff = diff
+                    best = c.get("cost_after")
+            return best
+        except Exception:
+            return None
+
+    # --- Scan full agent.log for all errors with timestamps ---
+    log_path = ROOT / "topics" / name / "data" / "agent.log"
+    if log_path.exists():
+        try:
+            raw = log_path.read_bytes()
+            text = raw.decode("utf-8", errors="replace")
+            all_lines = text.splitlines()
+            seen_errors: set[str] = set()
+            chunk_size = 50
+            for start in range(0, len(all_lines), chunk_size):
+                chunk = all_lines[start:start + chunk_size]
+                chunk_text = "\n".join(chunk)
+                for pat, _ in _ERROR_PATTERNS:
+                    if pat.search(chunk_text):
+                        summary = _summarize_error(chunk)
+                        if summary and summary not in seen_errors:
+                            seen_errors.add(summary)
+                            ts = ""
+                            for line in chunk:
+                                ts_match = re.match(r"(\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2})", line)
+                                if ts_match:
+                                    ts = ts_match.group(1)
+                            if not ts:
+                                ts = datetime.now(timezone.utc).isoformat()
+                            issues.append({
+                                "type": "log_error",
+                                "severity": "critical",
+                                "message": summary,
+                                "timestamp": ts,
+                                "cost_at": _nearest_cost(ts),
+                            })
+                        break
+        except Exception:
+            pass
+
+    # --- Process crash detection ---
+    entry = _running_agents.get(name)
+    if entry:
+        proc = entry["process"]
+        rc = proc.poll()
+        if rc is not None and rc != 0:
+            now = datetime.now(timezone.utc).isoformat()
+            issues.append({
+                "type": "process_crash",
+                "severity": "critical",
+                "message": f"Agent process exited with code {rc}",
+                "timestamp": now,
+                "cost_at": all_cycles[-1].get("cost_after") if all_cycles else None,
+            })
+
+    # --- Full cycle history scan ---
+    if all_cycles:
+        for i, c in enumerate(all_cycles):
+            action = c.get("action", "")
+            # budget_stop
+            if action == "budget_stop":
+                issues.append({
+                    "type": "budget_stop",
+                    "severity": "critical",
+                    "message": f"Budget exceeded — {c.get('summary', 'agent stopped')}",
+                    "timestamp": c.get("timestamp", ""),
+                    "cost_at": c.get("cost_after"),
+                })
+            # checkpoint_review (informational)
+            if action == "checkpoint_review":
+                issues.append({
+                    "type": "checkpoint",
+                    "severity": "warning",
+                    "message": c.get("summary", "Budget checkpoint reached"),
+                    "timestamp": c.get("timestamp", ""),
+                    "cost_at": c.get("cost_after"),
+                })
+
+        # Consecutive reflect cycles with no applied output (2+)
+        i = 0
+        while i < len(all_cycles):
+            if all_cycles[i].get("action") == "reflect" and not all_cycles[i].get("applied"):
+                run_start = i
+                while i < len(all_cycles) and all_cycles[i].get("action") == "reflect" and not all_cycles[i].get("applied"):
+                    i += 1
+                run = i - run_start
+                if run >= 2:
+                    c = all_cycles[i - 1]
+                    issues.append({
+                        "type": "stuck_reflecting",
+                        "severity": "warning" if run < 4 else "critical",
+                        "message": f"{run} consecutive reflect cycles with no output — agent stuck",
+                        "timestamp": c.get("timestamp", ""),
+                        "cost_at": c.get("cost_after"),
+                    })
+            else:
+                i += 1
+
+        # Sliding window checks
+        for i in range(4, len(all_cycles)):
+            window = all_cycles[i - 4:i + 1]
+
+            # Repeating summary: same summary 3+ times in 5-cycle window
+            summaries = [c.get("summary", "").strip().lower() for c in window if c.get("summary")]
+            if len(summaries) >= 3:
+                counts = Counter(summaries)
+                for s, count in counts.items():
+                    if count >= 3 and s:
+                        prev_window = all_cycles[i - 5:i] if i >= 5 else []
+                        prev_sums = [c.get("summary", "").strip().lower() for c in prev_window if c.get("summary")]
+                        prev_count = Counter(prev_sums).get(s, 0) if prev_sums else 0
+                        if prev_count < 3:
+                            issues.append({
+                                "type": "repeating_summary",
+                                "severity": "warning",
+                                "message": f"Same summary repeated {count}x in 5 cycles — possible loop",
+                                "timestamp": window[-1].get("timestamp", ""),
+                                "cost_at": window[-1].get("cost_after"),
+                            })
+                        break
+
+            # High burn no output: $0.50+ over 5 cycles with zero applied
+            any_applied = any(c.get("applied") for c in window)
+            if not any_applied:
+                burn = (window[-1].get("cost_after", 0) - window[0].get("cost_after", 0))
+                if burn >= 0.50:
+                    prev_window = all_cycles[i - 5:i] if i >= 5 else []
+                    prev_applied = any(c.get("applied") for c in prev_window) if prev_window else True
+                    prev_burn = (prev_window[-1].get("cost_after", 0) - prev_window[0].get("cost_after", 0)) if len(prev_window) >= 2 else 0
+                    if prev_applied or prev_burn < 0.50:
+                        issues.append({
+                            "type": "high_burn_no_output",
+                            "severity": "critical",
+                            "message": f"${burn:.2f} spent over 5 cycles with no applied output",
+                            "timestamp": window[-1].get("timestamp", ""),
+                            "cost_at": window[-1].get("cost_after"),
+                        })
+
+    # Sort by timestamp
+    issues.sort(key=lambda x: x.get("timestamp", ""))
+    return {"issues": issues, "has_issues": len(issues) > 0}
 
 
 # --- Agent process management ---
@@ -832,11 +1059,20 @@ def api_agents_status():
                 }
             # Selection checkpoint
             sc = cp_data.get("selection_checkpoint")
-            if sc and not sc.get("confirmed") and not running:
+            if sc and not running:
+                phase5_ran = False
+                cycles_f = d / "data" / "cycles.jsonl"
+                if cycles_f.exists():
+                    try:
+                        phase5_ran = "execution_playbook" in cycles_f.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
                 selection_checkpoint = {
                     "phase": sc.get("phase", ""),
                     "idea_count": len(sc.get("ideas", [])),
                     "timestamp": sc.get("timestamp", ""),
+                    "confirmed": bool(sc.get("confirmed")),
+                    "phase5_ran": phase5_ran,
                 }
 
         result.append({

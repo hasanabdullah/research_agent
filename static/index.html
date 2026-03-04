@@ -22,7 +22,7 @@
   body { font-family: var(--font); background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; -webkit-font-smoothing: antialiased; }
 
   /* Sidebar */
-  #sidebar { width: 260px; background: #2d2d2d; border-right: none; display: flex; flex-direction: column; flex-shrink: 0; }
+  #sidebar { width: 200px; background: #2d2d2d; border-right: none; display: flex; flex-direction: column; flex-shrink: 0; }
   #sidebar-header { padding: 20px 20px 16px; }
   #sidebar-header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; color: #fff; }
   #sidebar-header p { font-size: 11px; color: #9ca3af; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
@@ -71,6 +71,30 @@
   .cycle-row .action { color: var(--yellow); min-width: 100px; font-weight: 500; }
   .cycle-row .summary { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cycle-row .cost { color: var(--text2); font-family: var(--mono); font-size: 12px; }
+
+  /* Health panel */
+  .health-panel { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 24px; box-shadow: var(--shadow-sm); }
+  .health-panel h3 { font-size: 14px; margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .health-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+  .health-badge.ok { background: #d1fae5; color: #065f46; }
+  .health-badge.warning { background: #fef3c7; color: #92400e; }
+  .health-badge.critical { background: #fee2e2; color: #991b1b; }
+  .health-scroll { max-height: 250px; overflow-y: auto; }
+  .health-issue { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .health-issue:last-child { border-bottom: none; }
+  .health-issue .issue-icon { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; margin-top: 1px; }
+  .health-issue .issue-icon.warning { background: #fef3c7; color: #92400e; }
+  .health-issue .issue-icon.critical { background: #fee2e2; color: #991b1b; }
+  .health-issue .issue-msg { flex: 1; color: var(--text); line-height: 1.4; }
+  .health-issue .issue-time { color: var(--text2); font-size: 11px; flex-shrink: 0; font-family: var(--mono); }
+
+  /* Spend chart */
+  .spend-chart-container { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 24px; box-shadow: var(--shadow-sm); }
+  .spend-chart-container h3 { font-size: 14px; margin-bottom: 12px; font-weight: 600; }
+  .spend-chart-container svg { width: 100%; display: block; }
+  .chart-tooltip { position: absolute; pointer-events: none; background: #1a1a2e; color: #fff; font-size: 12px; line-height: 1.4; padding: 6px 10px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-width: 280px; white-space: normal; word-break: break-word; z-index: 10; transition: opacity 0.12s; }
+  .chart-tooltip::after { content: ''; position: absolute; top: 100%; left: 16px; border: 5px solid transparent; border-top-color: #1a1a2e; }
+  .chart-tooltip .tip-label { font-weight: 600; margin-bottom: 2px; }
 
   /* Research tab */
   .file-list { display: grid; gap: 8px; margin-bottom: 20px; }
@@ -526,7 +550,7 @@ function renderSidebar() {
       <div class="meta">
         <span>${t.cycles} cycles</span>
         <span>$${t.cost.toFixed(4)}</span>
-        ${t.running ? '<span style="color:var(--green)">running</span>' : (t.crashed ? '<span style="color:var(--red)">crashed</span>' : (t.selection_checkpoint ? '<span style="color:var(--accent);cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();selectTopic(\'' + esc(t.name) + '\');showSelectionModal(state.topics.find(x=>x.name===\'' + esc(t.name) + '\'))">select ideas</span>' : (t.checkpoint ? '<span style="color:var(--yellow)">checkpoint</span>' : '')))}
+        ${t.running ? '<span style="color:var(--green)">running</span>' : (t.crashed ? '<span style="color:var(--red)">crashed</span>' : (t.checkpoint ? '<span style="color:var(--yellow)">checkpoint</span>' : ''))}
       </div>
     </div>
   `}).join('');
@@ -579,9 +603,12 @@ function renderAgentControl() {
       <button style="font-size:11px;background:var(--green);border:1px solid var(--green);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="startAgent('${n}')">Restart</button>
     `;
   } else if (t.selection_checkpoint) {
+    const p5 = t.selection_checkpoint.phase5_ran;
+    const badge = p5 ? 'Phase 5 Complete' : 'Phase 4 Complete';
+    const btnText = p5 ? 'Reselect Ideas for Phase 5 Re-run' : 'Select Ideas for Phase 5';
     el.innerHTML = `
-      <span style="font-size:11px;background:var(--accent);color:#fff;border-radius:6px;padding:3px 8px;font-weight:600">Select Ideas</span>
-      <button style="font-size:11px;background:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="showSelectionModal(state.topics.find(t=>t.name==='${n}'))">Choose Ideas</button>
+      <span style="font-size:11px;background:var(--accent);color:#fff;border-radius:6px;padding:3px 8px;font-weight:600">${badge}</span>
+      <button style="font-size:11px;background:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="showSelectionModal(state.topics.find(t=>t.name==='${n}'))">${btnText}</button>
     `;
   } else if (t.checkpoint) {
     el.innerHTML = `
@@ -704,13 +731,214 @@ async function summarizeTopic() {
 }
 
 
+// --- Spend Chart ---
+function buildSpendChart(points, budgetLimit, issues) {
+  if (!points || points.length === 0) {
+    return '<div class="spend-chart-container"><h3>Budget Usage Over Time</h3><div style="color:var(--text2);font-size:13px;padding:12px 0">No spend data yet. Run some cycles to see the chart.</div></div>';
+  }
+
+  const W = 800, H = 320, PAD = { top: 25, right: 55, bottom: 35, left: 60 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  const maxCost = Math.max(budgetLimit || 1, ...points.map(p => p.cost)) * 1.1;
+  const times = points.map(p => new Date(p.t).getTime());
+  const minT = Math.min(...times);
+  const maxT = Math.max(...times);
+  const rangeT = maxT - minT || 1;
+
+  const x = (t) => PAD.left + ((new Date(t).getTime() - minT) / rangeT) * plotW;
+  const y = (c) => PAD.top + plotH - (c / maxCost) * plotH;
+
+  // Find the nearest spend point timestamp for a given cost value
+  function nearestPointX(costAt) {
+    let best = points[0], bestDiff = Math.abs(points[0].cost - costAt);
+    for (let i = 1; i < points.length; i++) {
+      const diff = Math.abs(points[i].cost - costAt);
+      if (diff < bestDiff) { bestDiff = diff; best = points[i]; }
+    }
+    return x(best.t);
+  }
+
+  // Build area path
+  let pathD = `M ${x(points[0].t)} ${y(points[0].cost)}`;
+  for (let i = 1; i < points.length; i++) {
+    pathD += ` L ${x(points[i].t)} ${y(points[i].cost)}`;
+  }
+  const areaD = pathD + ` L ${x(points[points.length-1].t)} ${y(0)} L ${x(points[0].t)} ${y(0)} Z`;
+
+  // Color based on last cost vs budget
+  const lastCost = points[points.length - 1].cost;
+  const pct = budgetLimit ? (lastCost / budgetLimit) * 100 : 0;
+  const lineColor = pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#10b981';
+  const fillColor = pct > 80 ? 'rgba(239,68,68,0.1)' : pct > 50 ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)';
+
+  // --- Phase boundary lines ---
+  let phaseLines = '';
+  const phaseColors = ['#6366f1','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16','#e11d48'];
+  const phases = [];
+  let currentPhase = '';
+  for (let i = 0; i < points.length; i++) {
+    const ph = points[i].phase || '';
+    if (ph && ph !== currentPhase && ph !== 'Reflect' && ph !== 'Checkpoint' && ph !== 'Budget Stop') {
+      phases.push({ phase: ph, index: i, t: points[i].t, cost: points[i].cost });
+      currentPhase = ph;
+    }
+  }
+  // Unique chart ID for tooltip scoping
+  const chartId = 'spend-chart-' + Math.random().toString(36).slice(2, 8);
+  for (let i = 0; i < phases.length; i++) {
+    const px = x(phases[i].t);
+    const color = phaseColors[i % phaseColors.length];
+    // Visible dashed line
+    phaseLines += `<line x1="${px}" y1="${PAD.top}" x2="${px}" y2="${PAD.top + plotH}" stroke="${color}" stroke-width="1" stroke-dasharray="4,3" opacity="0.6"/>`;
+    // Invisible wider hit area for hover
+    phaseLines += `<line x1="${px}" y1="${PAD.top}" x2="${px}" y2="${PAD.top + plotH}" stroke="transparent" stroke-width="12" class="chart-hover" data-tip="Phase ${i + 1}: ${phases[i].phase}" data-color="${color}" style="cursor:pointer"/>`;
+  }
+
+  // Y-axis labels (5 ticks)
+  let yLabels = '';
+  for (let i = 0; i <= 4; i++) {
+    const val = (maxCost / 4) * i;
+    const yp = y(val);
+    yLabels += `<text x="${PAD.left - 8}" y="${yp + 4}" text-anchor="end" fill="#6b7280" font-size="10" font-family="var(--mono)">$${val.toFixed(2)}</text>`;
+    yLabels += `<line x1="${PAD.left}" y1="${yp}" x2="${W - PAD.right}" y2="${yp}" stroke="#e2e4e9" stroke-width="0.5"/>`;
+  }
+
+  // X-axis labels (first, middle, last)
+  const xPositions = [0, Math.floor(points.length / 2), points.length - 1];
+  let xLabels = '';
+  for (const idx of xPositions) {
+    const p = points[idx];
+    const d = new Date(p.t);
+    const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    xLabels += `<text x="${x(p.t)}" y="${H - 5}" text-anchor="middle" fill="#6b7280" font-size="10">${label}</text>`;
+  }
+
+  // Data point dots
+  let dots = '';
+  const step = Math.max(1, Math.floor(points.length / 20));
+  for (let i = 0; i < points.length; i += step) {
+    const p = points[i];
+    dots += `<circle cx="${x(p.t)}" cy="${y(p.cost)}" r="3" fill="${lineColor}" opacity="0.7"><title>$${p.cost.toFixed(4)}</title></circle>`;
+  }
+  const last = points[points.length - 1];
+  dots += `<circle cx="${x(last.t)}" cy="${y(last.cost)}" r="3.5" fill="${lineColor}"><title>$${last.cost.toFixed(4)}</title></circle>`;
+
+  // Budget limit line
+  let budgetLine = '';
+  if (budgetLimit && budgetLimit <= maxCost) {
+    const by = y(budgetLimit);
+    budgetLine = `<line x1="${PAD.left}" y1="${by}" x2="${W - PAD.right}" y2="${by}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="6,3"/>`;
+    budgetLine += `<text x="${W - PAD.right + 4}" y="${by + 4}" fill="#ef4444" font-size="10" font-weight="600">Limit</text>`;
+  }
+
+  // Issue markers — position by cost_at (find nearest spend point for x)
+  let issueMarkers = '';
+  const chartIssues = (issues || []).filter(iss => iss.cost_at != null);
+  for (const iss of chartIssues) {
+    const ix = nearestPointX(iss.cost_at);
+    const iy = y(iss.cost_at);
+    const isCrit = iss.severity === 'critical';
+    const color = isCrit ? '#ef4444' : '#f59e0b';
+    const tipText = (iss.message.length > 100 ? iss.message.slice(0, 97) + '...' : iss.message).replace(/"/g, '&quot;');
+    const sevLabel = isCrit ? 'Critical' : 'Warning';
+    if (isCrit) {
+      const s = 7;
+      issueMarkers += `<polygon points="${ix},${iy-s} ${ix+s},${iy} ${ix},${iy+s} ${ix-s},${iy}" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
+      // Invisible larger hit area
+      issueMarkers += `<polygon points="${ix},${iy-s-4} ${ix+s+4},${iy} ${ix},${iy+s+4} ${ix-s-4},${iy}" fill="transparent" class="chart-hover" data-tip="${sevLabel}: ${tipText}" data-color="${color}" style="cursor:pointer"/>`;
+    } else {
+      const s = 7;
+      issueMarkers += `<polygon points="${ix},${iy-s} ${ix+s},${iy+s} ${ix-s},${iy+s}" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
+      issueMarkers += `<polygon points="${ix},${iy-s-4} ${ix+s+4},${iy+s+4} ${ix-s-4},${iy+s+4}" fill="transparent" class="chart-hover" data-tip="${sevLabel}: ${tipText}" data-color="${color}" style="cursor:pointer"/>`;
+    }
+    issueMarkers += `<line x1="${ix}" y1="${iy + 8}" x2="${ix}" y2="${PAD.top + plotH}" stroke="${color}" stroke-width="0.7" stroke-dasharray="3,3" opacity="0.4"/>`;
+  }
+
+  const issueCount = chartIssues.length;
+  const legendHtml = issueCount > 0
+    ? `<div style="display:flex;gap:10px;margin-top:8px;font-size:11px;color:var(--text2);justify-content:flex-end">
+        <span style="display:flex;align-items:center;gap:3px"><svg width="10" height="10"><polygon points="5,0 10,5 5,10 0,5" fill="#ef4444"/></svg> Critical</span>
+        <span style="display:flex;align-items:center;gap:3px"><svg width="10" height="10"><polygon points="5,1 9,9 1,9" fill="#f59e0b"/></svg> Warning</span>
+        <span>(${issueCount})</span>
+      </div>`
+    : '';
+
+  return `<div class="spend-chart-container" id="${chartId}">
+    <h3>Budget Usage Over Time</h3>
+    <div style="position:relative">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+        ${phaseLines}
+        ${yLabels}
+        ${xLabels}
+        <path d="${areaD}" fill="${fillColor}"/>
+        <path d="${pathD}" fill="none" stroke="${lineColor}" stroke-width="2" stroke-linejoin="round"/>
+        ${budgetLine}
+        ${dots}
+        ${issueMarkers}
+      </svg>
+      <div class="chart-tooltip" style="display:none"></div>
+    </div>
+    ${legendHtml}
+  </div>`;
+}
+
+function buildHealthPanel(health) {
+  if (!health) return '';
+  const issues = health.issues || [];
+  const hasCritical = issues.some(i => i.severity === 'critical');
+  const hasWarning = issues.some(i => i.severity === 'warning');
+  const badgeClass = hasCritical ? 'critical' : hasWarning ? 'warning' : 'ok';
+  const badgeText = hasCritical ? 'Issues Found' : hasWarning ? 'Warning' : 'Healthy';
+  const countText = issues.length > 0 ? `<span style="color:var(--text2);font-size:12px;font-weight:400;margin-left:4px">${issues.length} total</span>` : '';
+
+  const typeLabels = {
+    log_error: 'Log Error', process_crash: 'Crash', budget_stop: 'Budget', checkpoint: 'Checkpoint',
+    stuck_reflecting: 'Stuck', repeating_summary: 'Loop', high_burn_no_output: 'Burn'
+  };
+
+  let issueRows = '';
+  if (issues.length === 0) {
+    issueRows = '<div style="color:var(--text2);font-size:13px;padding:4px 0">No issues detected. Agent is operating normally.</div>';
+  } else {
+    // Show newest first
+    const sorted = [...issues].reverse();
+    issueRows = '<div class="health-scroll">' + sorted.map(iss => {
+      const icon = iss.severity === 'critical' ? '!' : '?';
+      const d = iss.timestamp ? new Date(iss.timestamp) : null;
+      const timeStr = d ? d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      const typeTag = typeLabels[iss.type] || iss.type;
+      const costStr = iss.cost_at != null ? `$${iss.cost_at.toFixed(4)}` : '';
+      return `<div class="health-issue">
+        <div class="issue-icon ${iss.severity}">${icon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+            <span class="health-badge ${iss.severity}" style="font-size:9px;padding:1px 6px">${typeTag}</span>
+            ${costStr ? `<span style="font-family:var(--mono);font-size:11px;color:var(--text2)">${costStr}</span>` : ''}
+          </div>
+          <div class="issue-msg">${escHtml(iss.message)}</div>
+        </div>
+        ${timeStr ? `<div class="issue-time">${timeStr}</div>` : ''}
+      </div>`;
+    }).join('') + '</div>';
+  }
+
+  return `<div class="health-panel">
+    <h3>Agent Health <span class="health-badge ${badgeClass}">${badgeText}</span>${countText}</h3>
+    ${issueRows}
+  </div>`;
+}
+
 // --- Monitor ---
 async function renderMonitor() {
   const el = document.getElementById('content');
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
-  const [detail, cycles] = await Promise.all([
+  const [detail, cycles, spendData, health] = await Promise.all([
     api(`topics/${state.selected}`),
-    api(`topics/${state.selected}/cycles?n=20`)
+    api(`topics/${state.selected}/cycles?n=20`),
+    api(`topics/${state.selected}/spend-history`).catch(() => ({points: []})),
+    api(`topics/${state.selected}/health`).catch(() => ({issues: [], has_issues: false}))
   ]);
 
   // Use per-agent budget if available, else fall back to global
@@ -728,11 +956,9 @@ async function renderMonitor() {
       <h2 style="font-size:18px">${state.selected}</h2>
       ${isRunning
         ? '<span style="color:var(--green);font-size:13px;display:flex;align-items:center;gap:4px"><span class="running-dot" style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s ease-in-out infinite"></span> Running</span>'
-        : (topicData && topicData.selection_checkpoint
-          ? '<span style="color:var(--accent);font-size:13px;font-weight:600">Select Ideas for Playbook</span>'
-          : (topicData && topicData.checkpoint
+        : (topicData && topicData.checkpoint
             ? '<span style="color:var(--yellow);font-size:13px;font-weight:600">Paused — ' + topicData.checkpoint.label + ' checkpoint</span>'
-            : '<span style="color:var(--text2);font-size:13px">Stopped</span>'))
+            : '<span style="color:var(--text2);font-size:13px">Stopped</span>')
       }
     </div>
     <div class="stats-grid">
@@ -757,6 +983,8 @@ async function renderMonitor() {
         <div class="budget-bar"><div class="fill" style="width:${pct}%;background:${barColor}"></div></div>
       </div>
     </div>
+    ${buildSpendChart(spendData.points, maxTotal, health.issues)}
+    ${buildHealthPanel(health)}
     <div class="identity-section">
       <h3>${detail.identity.name} v${detail.identity.version}</h3>
       <div style="font-size:13px;color:var(--text2);margin-bottom:8px">${detail.identity.purpose || ''}</div>
@@ -775,6 +1003,36 @@ async function renderMonitor() {
         `).join('')}
     </div>
   `;
+
+  // Wire up chart tooltip hover
+  const chartContainer = el.querySelector('.spend-chart-container');
+  if (chartContainer) {
+    const tooltip = chartContainer.querySelector('.chart-tooltip');
+    const svgEl = chartContainer.querySelector('svg');
+    if (tooltip && svgEl) {
+      chartContainer.addEventListener('mousemove', (e) => {
+        const target = e.target.closest('.chart-hover');
+        if (!target) { tooltip.style.display = 'none'; return; }
+        const tip = target.getAttribute('data-tip');
+        const color = target.getAttribute('data-color') || '#1a1a2e';
+        if (!tip) { tooltip.style.display = 'none'; return; }
+        tooltip.innerHTML = `<div class="tip-label" style="color:${color}">${tip}</div>`;
+        tooltip.style.display = 'block';
+        const rect = chartContainer.querySelector('div[style*="position:relative"]').getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        // Position above cursor, clamp to container
+        let tx = mx - 20;
+        let ty = my - tooltip.offsetHeight - 12;
+        if (tx + tooltip.offsetWidth > rect.width) tx = rect.width - tooltip.offsetWidth - 4;
+        if (tx < 0) tx = 4;
+        if (ty < 0) ty = my + 16;
+        tooltip.style.left = tx + 'px';
+        tooltip.style.top = ty + 'px';
+      });
+      chartContainer.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+    }
+  }
 }
 
 // --- Research ---

@@ -223,9 +223,11 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "youtube_transcript",
             "description": (
-                "Fetch the transcript of a YouTube video given its URL or video ID. "
-                "Returns the full text transcript with timestamps. Use this to extract "
-                "detailed information from YouTube videos, talks, interviews, and tutorials. "
+                "Fetch the transcript of a YouTube video, filtered to only relevant segments. "
+                "You MUST provide keywords to filter the transcript — only segments containing "
+                "at least one keyword are returned. This keeps token usage low and output focused. "
+                "Use this ONLY when a video from search results is clearly relevant to your research. "
+                "Prefer web_fetch on articles/blogs when text sources are available. "
                 "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
             ),
             "parameters": {
@@ -235,12 +237,17 @@ TOOL_DEFINITIONS = [
                         "type": "string",
                         "description": "YouTube video URL (e.g. https://www.youtube.com/watch?v=xxx) or video ID",
                     },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Keywords to filter transcript segments by relevance (e.g. ['saas', 'revenue', 'pricing']). Only segments containing at least one keyword are returned.",
+                    },
                     "include_timestamps": {
                         "type": "boolean",
                         "description": "Whether to include timestamps (default false — plain text is more compact)",
                     },
                 },
-                "required": ["video"],
+                "required": ["video", "keywords"],
             },
         },
     },
@@ -539,10 +546,13 @@ def _extract_video_id(video: str) -> str | None:
     return m.group(1) if m else None
 
 
-def handle_youtube_transcript(video: str, include_timestamps: bool = False) -> str:
-    """Fetch a YouTube video transcript. Shares rate limit with web_fetch."""
+def handle_youtube_transcript(video: str, keywords: list[str] | None = None, include_timestamps: bool = False) -> str:
+    """Fetch a YouTube video transcript filtered by keywords. Shares rate limit with web_fetch."""
     if not _YT_AVAILABLE:
         return "ERROR: youtube-transcript-api is not installed. Run: pip install youtube-transcript-api"
+
+    if not keywords:
+        return "ERROR: keywords parameter is required. Provide relevant terms to filter the transcript."
 
     global _web_fetch_count
     _web_fetch_count += 1
@@ -555,20 +565,50 @@ def handle_youtube_transcript(video: str, include_timestamps: bool = False) -> s
 
     try:
         transcript = list(YouTubeTranscriptApi().fetch(video_id))
+        total_segments = len(transcript)
+
+        # Keyword filtering: keep segments where any keyword appears (case-insensitive).
+        # Also include 1 segment before and after each match for context.
+        kw_lower = [k.lower() for k in keywords]
+        matched_indices = set()
+        for i, entry in enumerate(transcript):
+            text_lower = entry.text.lower()
+            if any(kw in text_lower for kw in kw_lower):
+                matched_indices.update([max(0, i - 1), i, min(total_segments - 1, i + 1)])
+
+        if not matched_indices:
+            return (
+                f"Transcript for video {video_id} had {total_segments} segments "
+                f"but NONE matched keywords {keywords}. Video may not be relevant."
+            )
+
+        filtered = [transcript[i] for i in sorted(matched_indices)]
 
         if include_timestamps:
             lines = []
-            for entry in transcript:
+            for entry in filtered:
                 mins, secs = divmod(int(entry.start), 60)
                 lines.append(f"[{mins:02d}:{secs:02d}] {entry.text}")
             text = "\n".join(lines)
         else:
-            text = " ".join(entry.text for entry in transcript)
+            # Group consecutive segments, separate non-consecutive with "..."
+            parts = []
+            prev_idx = -2
+            for idx in sorted(matched_indices):
+                if idx != prev_idx + 1:
+                    if parts:
+                        parts.append("...")
+                parts.append(transcript[idx].text)
+                prev_idx = idx
+            text = " ".join(parts)
 
-        if len(text) > 15000:
-            text = text[:15000] + "\n\n[... truncated at 15000 chars]"
+        if len(text) > 10000:
+            text = text[:10000] + "\n\n[... truncated at 10000 chars]"
 
-        return f"Transcript for YouTube video {video_id}:\n\n{text}"
+        return (
+            f"Transcript for YouTube video {video_id} "
+            f"({len(filtered)}/{total_segments} segments matched keywords {keywords}):\n\n{text}"
+        )
 
     except Exception as e:
         err = str(e)
@@ -587,7 +627,7 @@ TOOL_HANDLERS = {
     "reflect": lambda args: handle_reflect(args["observation"]),
     "web_search": lambda args: handle_web_search(args["query"], args.get("max_results", 5)),
     "web_fetch": lambda args: handle_web_fetch(args["url"], args.get("max_chars", 8000)),
-    "youtube_transcript": lambda args: handle_youtube_transcript(args["video"], args.get("include_timestamps", False)),
+    "youtube_transcript": lambda args: handle_youtube_transcript(args["video"], args.get("keywords"), args.get("include_timestamps", False)),
 }
 
 

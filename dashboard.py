@@ -398,6 +398,69 @@ def api_delete_topic(name: str):
     return {"deleted": name}
 
 
+@app.post("/api/topics/{name}/clone")
+def api_clone_topic(name: str):
+    """Clone a topic: copies mission + agent parameters but not research output."""
+    import shutil
+
+    src_dir = _topic_dir(name)  # validates existence
+
+    # Auto-generate clone name: foo -> foo_2, foo_3, ...
+    base = re.sub(r"_(\d+)$", "", name)  # strip existing _N suffix
+    counter = 2
+    while True:
+        clone_name = f"{base}_{counter}"
+        clone_dir = ROOT / "topics" / clone_name
+        if not clone_dir.exists():
+            break
+        counter += 1
+
+    # Create directory structure
+    (clone_dir / "data" / "research").mkdir(parents=True)
+    (clone_dir / "data" / "pending_patches").mkdir(parents=True)
+
+    # Copy mission.md
+    src_mission = src_dir / "mission.md"
+    if src_mission.exists():
+        shutil.copy2(src_mission, clone_dir / "mission.md")
+
+    # Copy agent_parameters.md
+    src_params = src_dir / "agent_parameters.md"
+    if src_params.exists():
+        shutil.copy2(src_params, clone_dir / "agent_parameters.md")
+
+    # Copy identity.json with reset version and born timestamp
+    src_identity = src_dir / "identity.json"
+    if src_identity.exists():
+        identity = json.loads(src_identity.read_text(encoding="utf-8"))
+        identity["version"] = "1.0"
+        identity["born"] = datetime.now(timezone.utc).isoformat()
+        identity["modification_history"] = []
+        (clone_dir / "identity.json").write_text(
+            json.dumps(identity, indent=2), encoding="utf-8"
+        )
+
+    # Copy agent_config.yaml and pre-create empty research files from buckets
+    src_config = src_dir / "agent_config.yaml"
+    if src_config.exists():
+        agent_cfg = yaml.safe_load(src_config.read_text(encoding="utf-8")) or {}
+        # Reset any runtime state but keep budget + research_buckets
+        (clone_dir / "agent_config.yaml").write_text(
+            yaml.dump(agent_cfg, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
+        # Pre-create empty research output files from research_buckets
+        for bucket in agent_cfg.get("research_buckets", []):
+            for f in bucket.get("files", []):
+                fname = f if isinstance(f, str) else f.get("filename", "")
+                if fname:
+                    (clone_dir / "data" / "research" / fname).write_text(
+                        "", encoding="utf-8"
+                    )
+
+    return {"cloned": clone_name}
+
+
 @app.post("/api/topics/{name}/switch")
 def api_switch_topic(name: str):
     _topic_dir(name)  # validates existence

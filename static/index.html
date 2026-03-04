@@ -41,6 +41,8 @@
   .topic-card .delete-btn:hover { color: var(--red) !important; }
   .topic-card:hover .edit-btn { opacity: 1 !important; }
   .topic-card .edit-btn:hover { color: var(--accent) !important; }
+  .topic-card:hover .clone-btn { opacity: 1 !important; }
+  .topic-card .clone-btn:hover { color: var(--green) !important; }
   #new-topic-btn { margin: 10px; padding: 9px; background: transparent; border: 1px dashed #505050; border-radius: 8px; color: #9ca3af; cursor: pointer; text-align: center; font-size: 12px; font-weight: 500; transition: all 0.15s ease; }
   #new-topic-btn:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -543,6 +545,7 @@ function renderSidebar() {
           ${escHtml(t.name)}
         </span>
         <span style="display:flex;gap:2px">
+          <span class="clone-btn" title="Clone agent" onclick="event.stopPropagation();cloneTopic('${n}')" style="opacity:0;color:#9ca3af;font-size:13px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x29C9;</span>
           <span class="edit-btn" title="Edit agent" onclick="event.stopPropagation();showEditModal('${n}')" style="opacity:0;color:#9ca3af;font-size:13px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x270E;</span>
           <span class="delete-btn" title="Delete agent" onclick="event.stopPropagation();confirmDelete('${n}')" style="opacity:0;color:#9ca3af;font-size:14px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x2715;</span>
         </span>
@@ -1392,6 +1395,16 @@ async function deleteTopic(name) {
     await load();
   } catch (e) {
     alert('Failed to delete: ' + e.message);
+  }
+}
+
+async function cloneTopic(name) {
+  try {
+    const result = await api(`topics/${name}/clone`, { method: 'POST' });
+    await load();
+    if (result.cloned) selectTopic(result.cloned);
+  } catch (e) {
+    alert('Failed to clone: ' + e.message);
   }
 }
 

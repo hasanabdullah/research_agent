@@ -1203,11 +1203,32 @@ def _rich_text(text: str) -> list[dict]:
 
 
 def _notion_create_page(parent_id: str, title: str, blocks: list[dict], headers: dict) -> dict:
-    """Create a child page under parent_id and append blocks."""
-    body = {
-        "parent": {"page_id": parent_id},
-        "properties": {"title": [{"text": {"content": title}}]},
-    }
+    """Create a child page under parent_id (page or database) and append blocks."""
+    # Detect whether parent is a database or a page
+    try:
+        r_check = http_requests.get(
+            f"{NOTION_API}/databases/{parent_id}",
+            headers=headers, timeout=10,
+        )
+        is_database = r_check.status_code == 200
+    except Exception:
+        is_database = False
+
+    if is_database:
+        parent = {"database_id": parent_id}
+        # Find the title property name from the database schema
+        db_props = r_check.json().get("properties", {})
+        title_prop = "Name"
+        for prop_name, prop_val in db_props.items():
+            if prop_val.get("type") == "title":
+                title_prop = prop_name
+                break
+        properties = {title_prop: {"title": [{"text": {"content": title}}]}}
+    else:
+        parent = {"page_id": parent_id}
+        properties = {"title": [{"text": {"content": title}}]}
+
+    body = {"parent": parent, "properties": properties}
     r = http_requests.post(f"{NOTION_API}/pages", headers=headers, json=body, timeout=30)
     r.raise_for_status()
     page = r.json()

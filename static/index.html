@@ -174,6 +174,45 @@
   .modal .budget-row input { margin-bottom: 0; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
   .modal-actions button { padding: 9px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; border: none; font-weight: 500; transition: all 0.15s ease; }
+  .chart-toggle { display: flex; background: var(--bg2); border-radius: 6px; padding: 2px; gap: 2px; }
+  .chart-toggle button { background: none; border: none; color: var(--text2); font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 5px; cursor: pointer; font-family: var(--font); transition: all 0.15s ease; }
+  .chart-toggle button.active { background: var(--bg); color: var(--text); box-shadow: var(--shadow-sm); }
+  .chart-toggle button:hover:not(.active) { color: var(--text); }
+  .template-grid { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; max-height: 340px; overflow-y: auto; }
+  .template-card { padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.15s ease; background: var(--bg); }
+  .template-card:hover { border-color: var(--accent); background: var(--bg2); }
+  .template-card.selected { border-color: var(--accent); background: rgba(79,70,229,0.06); box-shadow: 0 0 0 2px rgba(79,70,229,0.15); }
+  .template-card .tc-top { display: flex; align-items: center; gap: 10px; }
+  .template-card .tc-icon { font-size: 18px; flex-shrink: 0; }
+  .template-card .tc-info { flex: 1; min-width: 0; }
+  .template-card .tc-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .template-card .tc-desc { font-size: 11px; color: var(--text2); margin-top: 1px; line-height: 1.3; }
+  .template-card .tc-phases { font-size: 10px; color: var(--text2); flex-shrink: 0; }
+  .template-card .tc-chevron { font-size: 11px; color: var(--text2); flex-shrink: 0; transition: transform 0.2s ease; }
+  .template-card.expanded .tc-chevron { transform: rotate(90deg); }
+  .tc-output { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); display: none; }
+  .template-card.expanded .tc-output { display: block; }
+  .tc-output .tc-phase-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; }
+  .tc-output .tc-phase-num { font-size: 10px; font-weight: 700; color: var(--accent); min-width: 16px; padding-top: 1px; }
+  .tc-output .tc-phase-detail { flex: 1; }
+  .tc-output .tc-phase-title { font-size: 12px; font-weight: 600; color: var(--text); }
+  .tc-output .tc-phase-q { font-size: 11px; color: var(--text2); margin-top: 1px; }
+  .tc-output .tc-phase-file { font-size: 10px; color: var(--text2); font-family: var(--mono); margin-top: 1px; opacity: 0.7; }
+  .tc-output .tc-guide { margin: 4px 0 2px 24px; padding: 0; list-style: none; }
+  .tc-output .tc-guide li { font-size: 10px; color: var(--text2); padding: 1px 0; line-height: 1.4; }
+  .tc-output .tc-guide li::before { content: "→ "; color: var(--accent); font-weight: 600; }
+  .template-label { font-size: 12px; color: var(--text2); margin-bottom: 6px; font-weight: 500; }
+  .setup-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--accent); margin-bottom: 10px; user-select: none; }
+  .setup-toggle .setup-chevron { font-size: 10px; transition: transform 0.2s ease; }
+  .setup-toggle.open .setup-chevron { transform: rotate(90deg); }
+  .setup-instructions { display: none; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; font-size: 12px; line-height: 1.6; color: var(--text); }
+  .setup-instructions.open { display: block; }
+  .setup-instructions .step { display: flex; gap: 8px; margin-bottom: 8px; }
+  .setup-instructions .step:last-child { margin-bottom: 0; }
+  .setup-instructions .step-num { font-weight: 700; color: var(--accent); min-width: 18px; flex-shrink: 0; }
+  .setup-instructions .step-body { flex: 1; }
+  .setup-instructions .step-title { font-weight: 600; margin-bottom: 2px; }
+  .setup-instructions code { background: var(--bg3); padding: 2px 6px; border-radius: 4px; font-family: var(--mono); font-size: 11px; }
   .btn-primary { background: var(--accent); color: #fff; box-shadow: var(--shadow-sm); }
   .btn-primary:hover { opacity: 0.9; }
   .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border) !important; }
@@ -733,7 +772,13 @@ async function summarizeTopic() {
 
 
 // --- Spend Chart ---
-function buildSpendChart(points, budgetLimit, issues) {
+let _spendChartMode = 'time'; // 'time' or 'cycle'
+let _spendChartCache = null;  // {points, budgetLimit, issues}
+
+function buildSpendChart(points, budgetLimit, issues, mode) {
+  mode = mode || _spendChartMode;
+  _spendChartCache = { points, budgetLimit, issues };
+
   if (!points || points.length === 0) {
     return '<div class="spend-chart-container"><h3>Budget Usage Over Time</h3><div style="color:var(--text2);font-size:13px;padding:12px 0">No spend data yet. Run some cycles to see the chart.</div></div>';
   }
@@ -743,30 +788,45 @@ function buildSpendChart(points, budgetLimit, issues) {
   const plotH = H - PAD.top - PAD.bottom;
 
   const maxCost = Math.max(budgetLimit || 1, ...points.map(p => p.cost)) * 1.1;
-  const times = points.map(p => new Date(p.t).getTime());
-  const minT = Math.min(...times);
-  const maxT = Math.max(...times);
-  const rangeT = maxT - minT || 1;
 
-  const x = (t) => PAD.left + ((new Date(t).getTime() - minT) / rangeT) * plotW;
+  // X-axis: time or cycle index
+  let xScale, nearestPointX;
+  if (mode === 'cycle') {
+    const maxIdx = points.length - 1 || 1;
+    xScale = (_, i) => PAD.left + (i / maxIdx) * plotW;
+    nearestPointX = (costAt) => {
+      let best = 0, bestDiff = Math.abs(points[0].cost - costAt);
+      for (let i = 1; i < points.length; i++) {
+        const diff = Math.abs(points[i].cost - costAt);
+        if (diff < bestDiff) { bestDiff = diff; best = i; }
+      }
+      return xScale(null, best);
+    };
+  } else {
+    const times = points.map(p => new Date(p.t).getTime());
+    const minT = Math.min(...times);
+    const maxT = Math.max(...times);
+    const rangeT = maxT - minT || 1;
+    xScale = (t, _) => PAD.left + ((new Date(t).getTime() - minT) / rangeT) * plotW;
+    nearestPointX = (costAt) => {
+      let best = points[0], bestDiff = Math.abs(points[0].cost - costAt);
+      for (let i = 1; i < points.length; i++) {
+        const diff = Math.abs(points[i].cost - costAt);
+        if (diff < bestDiff) { bestDiff = diff; best = points[i]; }
+      }
+      return xScale(best.t, 0);
+    };
+  }
+
+  const px = (i) => xScale(points[i].t, i);
   const y = (c) => PAD.top + plotH - (c / maxCost) * plotH;
 
-  // Find the nearest spend point timestamp for a given cost value
-  function nearestPointX(costAt) {
-    let best = points[0], bestDiff = Math.abs(points[0].cost - costAt);
-    for (let i = 1; i < points.length; i++) {
-      const diff = Math.abs(points[i].cost - costAt);
-      if (diff < bestDiff) { bestDiff = diff; best = points[i]; }
-    }
-    return x(best.t);
-  }
-
   // Build area path
-  let pathD = `M ${x(points[0].t)} ${y(points[0].cost)}`;
+  let pathD = `M ${px(0)} ${y(points[0].cost)}`;
   for (let i = 1; i < points.length; i++) {
-    pathD += ` L ${x(points[i].t)} ${y(points[i].cost)}`;
+    pathD += ` L ${px(i)} ${y(points[i].cost)}`;
   }
-  const areaD = pathD + ` L ${x(points[points.length-1].t)} ${y(0)} L ${x(points[0].t)} ${y(0)} Z`;
+  const areaD = pathD + ` L ${px(points.length-1)} ${y(0)} L ${px(0)} ${y(0)} Z`;
 
   // Color based on last cost vs budget
   const lastCost = points[points.length - 1].cost;
@@ -789,12 +849,12 @@ function buildSpendChart(points, budgetLimit, issues) {
   // Unique chart ID for tooltip scoping
   const chartId = 'spend-chart-' + Math.random().toString(36).slice(2, 8);
   for (let i = 0; i < phases.length; i++) {
-    const px = x(phases[i].t);
+    const phx = xScale(phases[i].t, phases[i].index);
     const color = phaseColors[i % phaseColors.length];
     // Visible dashed line
-    phaseLines += `<line x1="${px}" y1="${PAD.top}" x2="${px}" y2="${PAD.top + plotH}" stroke="${color}" stroke-width="1" stroke-dasharray="4,3" opacity="0.6"/>`;
+    phaseLines += `<line x1="${phx}" y1="${PAD.top}" x2="${phx}" y2="${PAD.top + plotH}" stroke="${color}" stroke-width="1" stroke-dasharray="4,3" opacity="0.6"/>`;
     // Invisible wider hit area for hover
-    phaseLines += `<line x1="${px}" y1="${PAD.top}" x2="${px}" y2="${PAD.top + plotH}" stroke="transparent" stroke-width="12" class="chart-hover" data-tip="Phase ${i + 1}: ${phases[i].phase}" data-color="${color}" style="cursor:pointer"/>`;
+    phaseLines += `<line x1="${phx}" y1="${PAD.top}" x2="${phx}" y2="${PAD.top + plotH}" stroke="transparent" stroke-width="12" class="chart-hover" data-tip="Phase ${i + 1}: ${phases[i].phase}" data-color="${color}" style="cursor:pointer"/>`;
   }
 
   // Y-axis labels (5 ticks)
@@ -811,9 +871,14 @@ function buildSpendChart(points, budgetLimit, issues) {
   let xLabels = '';
   for (const idx of xPositions) {
     const p = points[idx];
-    const d = new Date(p.t);
-    const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    xLabels += `<text x="${x(p.t)}" y="${H - 5}" text-anchor="middle" fill="#6b7280" font-size="10">${label}</text>`;
+    let label;
+    if (mode === 'cycle') {
+      label = `#${idx + 1}`;
+    } else {
+      const d = new Date(p.t);
+      label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+    xLabels += `<text x="${px(idx)}" y="${H - 5}" text-anchor="middle" fill="#6b7280" font-size="10">${label}</text>`;
   }
 
   // Data point dots
@@ -821,10 +886,11 @@ function buildSpendChart(points, budgetLimit, issues) {
   const step = Math.max(1, Math.floor(points.length / 20));
   for (let i = 0; i < points.length; i += step) {
     const p = points[i];
-    dots += `<circle cx="${x(p.t)}" cy="${y(p.cost)}" r="3" fill="${lineColor}" opacity="0.7"><title>$${p.cost.toFixed(4)}</title></circle>`;
+    dots += `<circle cx="${px(i)}" cy="${y(p.cost)}" r="3" fill="${lineColor}" opacity="0.7"><title>Cycle ${i+1}: $${p.cost.toFixed(4)}</title></circle>`;
   }
-  const last = points[points.length - 1];
-  dots += `<circle cx="${x(last.t)}" cy="${y(last.cost)}" r="3.5" fill="${lineColor}"><title>$${last.cost.toFixed(4)}</title></circle>`;
+  const lastIdx = points.length - 1;
+  const last = points[lastIdx];
+  dots += `<circle cx="${px(lastIdx)}" cy="${y(last.cost)}" r="3.5" fill="${lineColor}"><title>Cycle ${lastIdx+1}: $${last.cost.toFixed(4)}</title></circle>`;
 
   // Budget limit line
   let budgetLine = '';
@@ -866,8 +932,17 @@ function buildSpendChart(points, budgetLimit, issues) {
       </div>`
     : '';
 
+  const timeActive = mode === 'time' ? 'active' : '';
+  const cycleActive = mode === 'cycle' ? 'active' : '';
+
   return `<div class="spend-chart-container" id="${chartId}">
-    <h3>Budget Usage Over Time</h3>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <h3 style="margin:0">Budget Usage</h3>
+      <div class="chart-toggle">
+        <button class="${timeActive}" onclick="toggleSpendMode('time')">Over Time</button>
+        <button class="${cycleActive}" onclick="toggleSpendMode('cycle')">Per Cycle</button>
+      </div>
+    </div>
     <div style="position:relative">
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
         ${phaseLines}
@@ -883,6 +958,22 @@ function buildSpendChart(points, budgetLimit, issues) {
     </div>
     ${legendHtml}
   </div>`;
+}
+
+function toggleSpendMode(mode) {
+  _spendChartMode = mode;
+  if (!_spendChartCache) return;
+  const { points, budgetLimit, issues } = _spendChartCache;
+  const html = buildSpendChart(points, budgetLimit, issues, mode);
+  // Replace only the chart container in the DOM
+  const existing = document.querySelector('.spend-chart-container');
+  if (existing) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    existing.replaceWith(wrapper.firstElementChild);
+    // Re-attach tooltip listeners
+    initChartTooltips();
+  }
 }
 
 function buildHealthPanel(health) {
@@ -929,6 +1020,34 @@ function buildHealthPanel(health) {
     <h3>Agent Health <span class="health-badge ${badgeClass}">${badgeText}</span>${countText}</h3>
     ${issueRows}
   </div>`;
+}
+
+function initChartTooltips() {
+  const chartContainer = document.querySelector('.spend-chart-container');
+  if (!chartContainer) return;
+  const tooltip = chartContainer.querySelector('.chart-tooltip');
+  const svgEl = chartContainer.querySelector('svg');
+  if (!tooltip || !svgEl) return;
+  chartContainer.addEventListener('mousemove', (e) => {
+    const target = e.target.closest('.chart-hover');
+    if (!target) { tooltip.style.display = 'none'; return; }
+    const tip = target.getAttribute('data-tip');
+    const color = target.getAttribute('data-color') || '#1a1a2e';
+    if (!tip) { tooltip.style.display = 'none'; return; }
+    tooltip.innerHTML = `<div class="tip-label" style="color:${color}">${tip}</div>`;
+    tooltip.style.display = 'block';
+    const rect = chartContainer.querySelector('div[style*="position:relative"]').getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    let tx = mx - 20;
+    let ty = my - tooltip.offsetHeight - 12;
+    if (tx + tooltip.offsetWidth > rect.width) tx = rect.width - tooltip.offsetWidth - 4;
+    if (tx < 0) tx = 4;
+    if (ty < 0) ty = my + 16;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+  });
+  chartContainer.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
 }
 
 // --- Monitor ---
@@ -1005,35 +1124,7 @@ async function renderMonitor() {
     </div>
   `;
 
-  // Wire up chart tooltip hover
-  const chartContainer = el.querySelector('.spend-chart-container');
-  if (chartContainer) {
-    const tooltip = chartContainer.querySelector('.chart-tooltip');
-    const svgEl = chartContainer.querySelector('svg');
-    if (tooltip && svgEl) {
-      chartContainer.addEventListener('mousemove', (e) => {
-        const target = e.target.closest('.chart-hover');
-        if (!target) { tooltip.style.display = 'none'; return; }
-        const tip = target.getAttribute('data-tip');
-        const color = target.getAttribute('data-color') || '#1a1a2e';
-        if (!tip) { tooltip.style.display = 'none'; return; }
-        tooltip.innerHTML = `<div class="tip-label" style="color:${color}">${tip}</div>`;
-        tooltip.style.display = 'block';
-        const rect = chartContainer.querySelector('div[style*="position:relative"]').getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        // Position above cursor, clamp to container
-        let tx = mx - 20;
-        let ty = my - tooltip.offsetHeight - 12;
-        if (tx + tooltip.offsetWidth > rect.width) tx = rect.width - tooltip.offsetWidth - 4;
-        if (tx < 0) tx = 4;
-        if (ty < 0) ty = my + 16;
-        tooltip.style.left = tx + 'px';
-        tooltip.style.top = ty + 'px';
-      });
-      chartContainer.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
-    }
-  }
+  initChartTooltips();
 }
 
 // --- Research ---
@@ -1235,6 +1326,7 @@ async function renderConfigure() {
   const llmCfg = await fetch('/api/llm/config').then(r => r.json()).catch(() => ({ provider: '', api_key_set: false, api_key_masked: '' }));
   const redditCfg = await fetch('/api/reddit/config').then(r => r.json()).catch(() => ({ client_id: '', configured: false, client_secret_masked: '' }));
   const newsapiCfg = await fetch('/api/newsapi/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' }));
+  const notionCfg = await fetch('/api/notion/config').then(r => r.json()).catch(() => ({ token_set: false, root_page_id: '', hub_database_id: '' }));
 
   // Get current per-agent budget (only if a topic is selected)
   let budgetHtml = '';
@@ -1261,11 +1353,23 @@ async function renderConfigure() {
     </div>`;
   }
 
-  const llmProviders = ['openrouter', 'anthropic', 'openai', 'gemini'];
+  const notionConnected = notionCfg.token_set && notionCfg.root_page_id;
+  const statusDot = notionConnected
+    ? '<span class="status-dot" style="background:var(--green)"></span>Connected'
+    : '<span class="status-dot" style="background:var(--red)"></span>Not configured';
+  const hubLink = notionCfg.hub_database_id
+    ? `<a href="https://notion.so/${notionCfg.hub_database_id.replace(/-/g, '')}" target="_blank" style="color:var(--accent);font-size:12px;margin-left:12px">Open Hub Database</a>`
+    : '';
+
+  const llmProviders = ['gemini', 'vertex', 'anthropic', 'openrouter', 'openai'];
+  const providerLabels = { gemini: 'Gemini API Key (Google AI Studio)', vertex: 'Vertex AI (Google Cloud)', anthropic: 'Anthropic', openrouter: 'OpenRouter', openai: 'OpenAI' };
   const curProvider = (llmCfg.provider || '').toLowerCase();
   const providerOptions = llmProviders.map(p =>
-    `<option value="${p}" ${p === curProvider ? 'selected' : ''}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`
+    `<option value="${p}" ${p === curProvider ? 'selected' : ''}>${providerLabels[p] || p}</option>`
   ).join('');
+  const isVertex = curProvider === 'vertex';
+  const isGemini = curProvider === 'gemini';
+  const showApiKey = !isVertex;
 
   // Agent Configuration section (mission + agent parameters)
   let agentConfigHtml = '';
@@ -1296,14 +1400,61 @@ async function renderConfigure() {
       <h3>LLM Configuration</h3>
       <div style="margin-bottom:8px">
         <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Provider</label>
-        <select id="llm-provider" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;box-shadow:var(--shadow-sm);">
+        <select id="llm-provider" onchange="toggleLlmFields()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;box-shadow:var(--shadow-sm);">
           <option value="">Select provider...</option>
           ${providerOptions}
         </select>
       </div>
-      <div style="margin-bottom:8px">
+      <div id="llm-vertex-fields" style="display:${isVertex ? 'block' : 'none'}">
+        <div class="setup-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+          <span class="setup-chevron">▶</span> Setup Instructions
+        </div>
+        <div class="setup-instructions">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Install Google Cloud CLI</div>
+              <code>brew install google-cloud-sdk</code>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Authenticate</div>
+              <code>gcloud auth login</code><br>
+              <code>gcloud auth application-default login</code><br>
+              <span style="font-size:11px;color:var(--text2)">The second command creates credentials that Vertex AI uses for auth.</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Set your project</div>
+              <code>gcloud config set project YOUR_PROJECT_ID</code>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Install Python dependency</div>
+              <code>pip install google-auth</code>
+              <span style="font-size:11px;color:var(--text2)">(included in <code>pip install -e .</code>)</span>
+            </div>
+          </div>
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">GCP Project ID</label>
+          <input type="text" id="vertex-project" value="${escHtml(llmCfg.vertex_project || '')}" placeholder="my-project-id" />
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Location</label>
+          <input type="text" id="vertex-location" value="${escHtml(llmCfg.vertex_location || 'us-central1')}" placeholder="us-central1" />
+        </div>
+      </div>
+      <div id="llm-apikey-field" style="display:${showApiKey ? 'block' : 'none'};margin-bottom:8px">
         <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Key</label>
         <input type="password" id="llm-api-key" placeholder="${llmCfg.api_key_masked || 'Enter API key...'}" />
+        <div id="gemini-hint" style="display:${isGemini ? 'block' : 'none'};font-size:11px;color:var(--text2);margin-top:4px">Get a key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">Google AI Studio</a></div>
       </div>
       <button class="save-btn" id="llm-config-btn" onclick="saveLlmConfig(this)">Save LLM Config</button>
     </div>
@@ -1337,12 +1488,46 @@ async function renderConfigure() {
   `;
 }
 
+async function saveNotionConfig(btn) {
+  const token = document.getElementById('notion-token').value;
+  const rootPageId = document.getElementById('notion-root-page').value.trim();
+  const body = {};
+  if (token) body.token = token;
+  if (rootPageId) body.root_page_id = rootPageId;
+  try {
+    await fetch('/api/notion/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    btn.textContent = 'Saved!'; btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'Save Notion Config'; btn.classList.remove('saved'); }, 1500);
+    renderConfigure();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+function toggleLlmFields() {
+  const provider = document.getElementById('llm-provider').value.toLowerCase();
+  const vertexFields = document.getElementById('llm-vertex-fields');
+  const apiKeyField = document.getElementById('llm-apikey-field');
+  const geminiHint = document.getElementById('gemini-hint');
+  if (vertexFields) vertexFields.style.display = provider === 'vertex' ? 'block' : 'none';
+  if (apiKeyField) apiKeyField.style.display = provider === 'vertex' ? 'none' : 'block';
+  if (geminiHint) geminiHint.style.display = provider === 'gemini' ? 'block' : 'none';
+}
+
 async function saveLlmConfig(btn) {
   const provider = document.getElementById('llm-provider').value;
-  const apiKey = document.getElementById('llm-api-key').value;
+  const apiKey = document.getElementById('llm-api-key')?.value || '';
+  const vertexProject = document.getElementById('vertex-project')?.value || '';
+  const vertexLocation = document.getElementById('vertex-location')?.value || '';
   const body = {};
   if (provider) body.provider = provider;
   if (apiKey) body.api_key = apiKey;
+  if (vertexProject) body.vertex_project = vertexProject;
+  if (vertexLocation) body.vertex_location = vertexLocation;
   try {
     await fetch('/api/llm/config', {
       method: 'PUT',
@@ -1475,17 +1660,53 @@ async function cloneTopic(name) {
 }
 
 // --- Create modal ---
-function showCreateModal() {
+async function showCreateModal() {
   const globalBudget = state.config.budget || {};
   const defaultTotal = globalBudget.max_total_usd || 10;
   const defaultDaily = globalBudget.max_per_day_usd || 10;
+
+  // Fetch templates
+  let templates = [];
+  try { templates = await api('templates'); } catch (e) { /* proceed without */ }
+
+  let templateCards = `<div class="template-card selected" onclick="selectTemplate(this, '')">`
+    + `<div class="tc-top"><div class="tc-icon">✨</div><div class="tc-info">`
+    + `<div class="tc-name">Custom (AI-generated)</div>`
+    + `<div class="tc-desc">LLM generates a unique research scaffold tailored to your topic</div>`
+    + `</div></div></div>`;
+  for (const t of templates) {
+    let phases = '';
+    t.phases.forEach((p, i) => {
+      const guides = (p.guiding_questions || []).map(q => `<li>${q}</li>`).join('');
+      phases += `<div class="tc-phase-row">`
+        + `<div class="tc-phase-num">${i + 1}</div>`
+        + `<div class="tc-phase-detail">`
+        + `<div class="tc-phase-title">${p.title}</div>`
+        + `<div class="tc-phase-q">${p.question}</div>`
+        + `<div class="tc-phase-file">${p.filename}</div>`
+        + `</div></div>`
+        + (guides ? `<ul class="tc-guide">${guides}</ul>` : '');
+    });
+    templateCards += `<div class="template-card" onclick="selectTemplate(this, '${t.slug}')">`
+      + `<div class="tc-top"><div class="tc-icon">${t.icon}</div><div class="tc-info">`
+      + `<div class="tc-name">${t.name}</div>`
+      + `<div class="tc-desc">${t.description}</div>`
+      + `</div><div class="tc-phases">${t.phase_count} phases</div>`
+      + `<div class="tc-chevron">▶</div></div>`
+      + `<div class="tc-output">${phases}</div>`
+      + `</div>`;
+  }
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal">
+    <div class="modal" style="width:500px">
       <h2>Create New Agent</h2>
       <input id="new-name" placeholder="Topic name (e.g. sports-research)" />
       <textarea id="new-desc" placeholder="One-line description"></textarea>
+      <input type="hidden" id="new-template" value="" />
+      <div class="template-label">Research Template</div>
+      <div class="template-grid">${templateCards}</div>
       <div class="budget-row">
         <div style="flex:1">
           <label>Total budget ($)</label>
@@ -1506,13 +1727,30 @@ function showCreateModal() {
   document.getElementById('new-name').focus();
 }
 
+function selectTemplate(el, slug) {
+  const grid = el.closest('.template-grid');
+  // Selection — always exactly one selected
+  grid.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('new-template').value = slug;
+
+  // Expand/collapse — toggle clicked card, collapse others
+  const wasExpanded = el.classList.contains('expanded');
+  grid.querySelectorAll('.template-card').forEach(c => c.classList.remove('expanded'));
+  if (!wasExpanded && slug) {
+    el.classList.add('expanded');
+  }
+}
+
 async function createTopic() {
   const name = document.getElementById('new-name').value.trim();
   const desc = document.getElementById('new-desc').value.trim();
+  const tpl = document.getElementById('new-template').value;
   const maxTotal = parseFloat(document.getElementById('new-budget-total').value);
   const maxDaily = parseFloat(document.getElementById('new-budget-daily').value);
   if (!name) return;
   const body = { name, description: desc };
+  if (tpl) body.template = tpl;
   if (!isNaN(maxTotal)) body.max_total_usd = maxTotal;
   if (!isNaN(maxDaily)) body.max_per_day_usd = maxDaily;
   try {

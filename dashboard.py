@@ -35,7 +35,8 @@ from agent import (
     save_config,
 )
 from costs import _load_ledger, get_summary
-from llm import get_client, resolve_model
+from llm import get_client, resolve_model, completions_with_retry
+from templates import apply_template, list_templates
 
 app = FastAPI(title="Deepshika Dashboard")
 
@@ -51,6 +52,7 @@ _crashed_agents: set[str] = set()  # tracks agents that crashed until restarted
 class TopicCreate(BaseModel):
     name: str
     description: str = ""
+    template: Optional[str] = None
     max_total_usd: Optional[float] = None
     max_per_day_usd: Optional[float] = None
 
@@ -76,6 +78,8 @@ class NotionConfig(BaseModel):
 class LlmConfig(BaseModel):
     provider: str = ""
     api_key: str = ""
+    vertex_project: str = ""
+    vertex_location: str = ""
 
 
 class TopicIdentityUpdate(BaseModel):
@@ -288,6 +292,12 @@ def api_topic_detail(name: str):
     }
 
 
+@app.get("/api/templates")
+def api_list_templates():
+    """Return available research templates for the UI picker."""
+    return list_templates()
+
+
 @app.post("/api/topics")
 def api_create_topic(body: TopicCreate):
     name = body.name.strip()
@@ -303,10 +313,18 @@ def api_create_topic(body: TopicCreate):
     (topic_dir / "data" / "research").mkdir(parents=True)
     (topic_dir / "data" / "pending_patches").mkdir(parents=True)
 
-    # Attempt LLM-generated scaffold
+    # Use template if specified, otherwise fall through to LLM scaffold
     config = load_config()
-    scaffold = generate_agent_scaffold(name, desc, config)
+    scaffold = None
     scaffolded = False
+
+    if body.template:
+        scaffold = apply_template(body.template, name, desc)
+        if scaffold:
+            scaffolded = True
+
+    if scaffold is None:
+        scaffold = generate_agent_scaffold(name, desc, config)
     output_file_names = []
 
     if scaffold:
@@ -1314,7 +1332,8 @@ def api_summarize(name: str):
 
     client = get_client()
 
-    response = client.chat.completions.create(
+    response = completions_with_retry(
+        client,
         model=resolve_model(model),
         max_tokens=4096,
         messages=[
@@ -1788,14 +1807,18 @@ def _load_llm_config() -> dict:
     llm = cfg.get("llm", {}) or {}
     provider = llm.get("provider", "") or os.environ.get("LLM_PROVIDER", "")
     api_key = llm.get("api_key", "") or os.environ.get("LLM_API_KEY", "") or os.environ.get("OPENROUTER_API_KEY", "")
-    return {"provider": provider, "api_key": api_key}
+    vertex = cfg.get("vertex", {}) or {}
+    vertex_project = vertex.get("project", "") or os.environ.get("VERTEX_PROJECT", "")
+    vertex_location = vertex.get("location", "") or os.environ.get("VERTEX_LOCATION", "us-central1")
+    return {"provider": provider, "api_key": api_key, "vertex_project": vertex_project, "vertex_location": vertex_location}
 
 
 def _save_llm_config(llm_cfg: dict):
-    """Upsert the llm: block in config.yaml, preserving other content."""
+    """Upsert the llm: and vertex: blocks in config.yaml, preserving other content."""
     cfg_path = ROOT / "config.yaml"
     text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
 
+    # Update llm: block
     lines = ["llm:"]
     for key in ("provider", "api_key"):
         val = llm_cfg.get(key, "")
@@ -1812,6 +1835,29 @@ def _save_llm_config(llm_cfg: dict):
     else:
         text = text.rstrip() + "\n\n" + snippet + "\n"
 
+    # Update vertex: block
+    vertex_project = llm_cfg.get("vertex_project", "")
+    vertex_location = llm_cfg.get("vertex_location", "") or "us-central1"
+    vlines = ["vertex:", f'  project: "{vertex_project}"', f'  location: "{vertex_location}"']
+    vsnippet = "\n".join(vlines)
+
+    if re.search(r"^vertex:\s*$", text, re.MULTILINE):
+        text = re.sub(
+            r"^vertex:\s*\n(?:[ \t]+\S.*\n?)*",
+            vsnippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    elif re.search(r"^vertex:", text, re.MULTILINE):
+        text = re.sub(
+            r"^vertex:\n(?:[ \t]+\S.*\n?)*",
+            vsnippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + vsnippet + "\n"
+
     cfg_path.write_text(text, encoding="utf-8")
 
 
@@ -1827,6 +1873,8 @@ def api_get_llm_config():
         "provider": cfg.get("provider", ""),
         "api_key_masked": masked,
         "api_key_set": bool(api_key),
+        "vertex_project": cfg.get("vertex_project", ""),
+        "vertex_location": cfg.get("vertex_location", ""),
     }
 
 
@@ -1837,6 +1885,8 @@ def api_put_llm_config(body: LlmConfig):
     llm_cfg = {
         "provider": body.provider if body.provider else existing.get("provider", ""),
         "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
+        "vertex_project": body.vertex_project if body.vertex_project else existing.get("vertex_project", ""),
+        "vertex_location": body.vertex_location if body.vertex_location else existing.get("vertex_location", ""),
     }
     _save_llm_config(llm_cfg)
     return {"status": "saved"}

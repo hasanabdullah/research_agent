@@ -17,6 +17,7 @@ dependencies = [
     "newsapi-python>=0.2",
     "fastapi>=0.100",
     "uvicorn[standard]>=0.20",
+    "google-auth>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +27,7 @@ dev = ["pytest>=8.0"]
 deepshika = "agent:cli"
 
 [tool.setuptools]
-py-modules = ["agent", "costs", "tools", "supervisor", "dashboard"]
+py-modules = ["agent", "costs", "tools", "supervisor", "dashboard", "llm", "templates"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

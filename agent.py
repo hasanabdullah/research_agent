@@ -28,8 +28,9 @@ import yaml
 from dotenv import load_dotenv
 
 from costs import check_budget, get_summary, get_total_usd, record_call
-from llm import get_client, resolve_model
+from llm import get_client, resolve_model, completions_with_retry
 from supervisor import review_proposal
+from templates import apply_template, list_templates
 from tools import TOOL_DEFINITIONS, get_active_tools, dispatch_tool, reset_web_counters, set_paths, _resolve_file_path
 
 load_dotenv()
@@ -134,7 +135,8 @@ def generate_agent_scaffold(name: str, description: str, config: dict, verbose: 
             f"Generate the scaffolding JSON now."
         )
 
-        response = client.chat.completions.create(
+        response = completions_with_retry(
+            client,
             model=resolve_model(scaffold_model),
             max_tokens=4096,
             messages=[
@@ -824,9 +826,10 @@ def run_cycle(config: dict) -> dict:
     patch_file = None
 
     for turn in range(10):  # max 10 tool-use turns per cycle
-        response = client.chat.completions.create(
+        response = completions_with_retry(
+            client,
             model=resolve_model(config.get("model", "anthropic/claude-opus-4.6")),
-            max_tokens=4096,
+            max_tokens=16384,
             tools=get_active_tools(),
             messages=messages,
         )
@@ -1335,7 +1338,8 @@ def topic():
 
 @topic.command("create")
 @click.argument("name")
-def topic_create(name):
+@click.option("--template", "template_slug", default=None, help="Use a pre-defined template slug (see 'topic templates').")
+def topic_create(name, template_slug):
     """Create a new topic directory with scaffold files."""
     topic_dir = ROOT / "topics" / name
     if topic_dir.exists():
@@ -1344,17 +1348,37 @@ def topic_create(name):
 
     description = click.prompt("One-line description for this topic", default=f"Research topic: {name}")
 
+    # If no --template flag, show interactive picker
+    if template_slug is None:
+        templates = list_templates()
+        click.echo("\nChoose a research template:")
+        click.echo(f"  0) Custom (AI-generated)")
+        for i, t in enumerate(templates, 1):
+            click.echo(f"  {i}) {t['icon']} {t['name']} — {t['description']}")
+        choice = click.prompt("Select", type=int, default=0)
+        if 1 <= choice <= len(templates):
+            template_slug = templates[choice - 1]["slug"]
+
     # Create directory structure
     (topic_dir / "data" / "research").mkdir(parents=True)
     (topic_dir / "data" / "pending_patches").mkdir(parents=True)
 
-    # Attempt LLM-generated scaffold
-    config = load_config()
-    click.echo("Generating topic scaffolding via LLM...")
-    scaffold = generate_agent_scaffold(name, description, config)
+    # Use template or fall through to LLM scaffold
+    scaffold = None
+    if template_slug:
+        scaffold = apply_template(template_slug, name, description)
+        if scaffold:
+            click.echo(f"  Applied template: {template_slug}")
+        else:
+            click.echo(f"  Unknown template '{template_slug}', falling back to LLM.")
+
+    if scaffold is None:
+        config = load_config()
+        click.echo("Generating topic scaffolding via LLM...")
+        scaffold = generate_agent_scaffold(name, description, config)
 
     if scaffold:
-        # Write LLM-generated files
+        # Write scaffold files
         (topic_dir / "mission.md").write_text(scaffold["mission"], encoding="utf-8")
         (topic_dir / "agent_parameters.md").write_text(scaffold["agent_parameters"], encoding="utf-8")
 
@@ -1370,11 +1394,12 @@ def topic_create(name):
             )
 
         output_names = [of["filename"] for of in scaffold["output_files"]]
-        click.echo(f"  LLM scaffold generated successfully.")
+        click.echo(f"  Scaffold generated successfully.")
         click.echo(f"  Output files: {', '.join(output_names)}")
 
-        # Record LLM cost to topic's costs.json
+        # Record LLM cost to topic's costs.json (templates have no _usage)
         if scaffold.get("_usage"):
+            config = load_config()
             pricing = config.get("pricing", {"input_per_mtok": 1.0, "output_per_mtok": 5.0})
             record_call(
                 scaffold["_usage"]["input_tokens"],
@@ -1449,6 +1474,17 @@ def topic_list():
         click.echo(f"  {name:<28} {cycle_count:>7} ${total_cost:>8.4f} {is_active:>7}")
 
     click.echo()
+
+
+@topic.command("templates")
+def topic_templates():
+    """List available research templates."""
+    templates = list_templates()
+    click.echo(f"\n{'Slug':<30} {'Name':<30} {'Phases':>6}")
+    click.echo(f"{'-'*30} {'-'*30} {'-'*6}")
+    for t in templates:
+        click.echo(f"  {t['slug']:<28} {t['icon']} {t['name']:<27} {t['phase_count']:>6}")
+    click.echo(f"\nUse: deepshika topic create <name> --template <slug>")
 
 
 @topic.command("switch")

@@ -1,6 +1,8 @@
-# Model name — OpenRouter format works with any provider;
-# resolve_model() auto-converts for Anthropic/OpenAI when needed.
-model: anthropic/claude-opus-4.6
+# Model name — provider prefix is auto-resolved.
+# Vertex AI examples: google/gemini-3.1-pro-preview, google/gemini-2.0-flash
+# Anthropic examples: anthropic/claude-opus-4.6, anthropic/claude-sonnet-4.6
+model: google/gemini-3.1-pro-preview
+scaffold_model: google/gemini-2.0-flash
 
 # research = auto-approve research files, refuse code edits
 # full = human approves everything (code + research)
@@ -43,7 +45,35 @@ notion:
   hub_database_id: ""
 
 # LLM provider & API key — set via dashboard Configure tab
-# Valid providers: openrouter, anthropic, openai, gemini
+# Providers: "gemini", "vertex", "anthropic", "openrouter", "openai"
+#
+# ── Option A: Gemini API Key (simplest) ──
+# Get a key from https://aistudio.google.com/apikey
+# No GCP project or gcloud needed.
+#
+# llm:
+#   provider: "gemini"
+#   api_key: "AIzaSy..."
+#
+# ── Option B: Vertex AI (Google Cloud) ──
+# Uses Application Default Credentials (no API key needed).
+# Prerequisites:
+#   1. Install gcloud CLI: https://cloud.google.com/sdk/docs/install
+#   2. Authenticate: gcloud auth application-default login
+#   3. Enable Vertex AI API: gcloud services enable aiplatform.googleapis.com
+#   4. Grant IAM role: roles/aiplatform.user
+#
+# llm:
+#   provider: "vertex"
+#   api_key: ""
+# vertex:
+#   project: "my-gcp-project-id"
+#   location: "us-central1"
 llm:
-  provider: ""
+  provider: "gemini"
   api_key: ""
+
+# Vertex AI settings (only used when llm.provider is "vertex")
+vertex:
+  project: ""
+  location: "us-central1"

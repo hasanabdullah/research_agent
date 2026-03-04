@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 from costs import record_call
-from llm import get_client, resolve_model
+from llm import get_client, resolve_model, completions_with_retry
 
 ROOT = Path(__file__).parent
 
@@ -48,10 +48,11 @@ def review_proposal(patch_data: dict, costs_file=None) -> dict:
     )
 
     client = get_client()
-    response = client.chat.completions.create(
+    response = completions_with_retry(
+        client,
         model=resolve_model(config.get("model", "anthropic/claude-opus-4.6")),
         max_tokens=300,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": prompt},],
     )
 
     # Record cost

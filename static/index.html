@@ -1378,9 +1378,10 @@ async function renderConfigure() {
       api(`topics/${state.selected}/mission`),
       api(`topics/${state.selected}/prompt`)
     ]);
+    const agentConfigured = !!(mission.content && mission.content.trim() && prompt.content && prompt.content.trim());
     agentConfigHtml = `
     <div class="config-section">
-      <h3>Agent Configuration</h3>
+      <h3>Agent Configuration <span style="font-size:11px;font-weight:400;color:${agentConfigured ? '#22c55e' : 'var(--text2)'};margin-left:8px">${agentConfigured ? '&#x2713; Configured' : 'Not configured'}</span></h3>
       <div style="margin-bottom:16px">
         <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Research Objective</label>
         <textarea id="mission-editor">${escHtml(mission.content)}</textarea>
@@ -1397,7 +1398,7 @@ async function renderConfigure() {
   el.innerHTML = `
     ${budgetHtml}
     <div class="config-section">
-      <h3>LLM Configuration</h3>
+      <h3>LLM Configuration <span style="font-size:11px;font-weight:400;color:${llmCfg.api_key_set ? '#22c55e' : 'var(--text2)'};margin-left:8px">${llmCfg.api_key_set ? '&#x2713; Configured' : 'Not configured'}</span></h3>
       <div style="margin-bottom:8px">
         <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Provider</label>
         <select id="llm-provider" onchange="toggleLlmFields()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;box-shadow:var(--shadow-sm);">

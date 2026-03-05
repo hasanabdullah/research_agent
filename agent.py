@@ -368,7 +368,7 @@ def list_research_files(paths: dict = None) -> str:
     return "\n".join(lines)
 
 
-def _build_phase_guidance(config: dict, paths: dict) -> str:
+def _build_phase_guidance(config: dict, paths: dict, phase_budget_exceeded: dict = None) -> str:
     """Build dynamic phase budget tracker that tells the agent which phase to work on.
 
     Uses weighted allocation: later phases get proportionally more budget because
@@ -388,14 +388,14 @@ def _build_phase_guidance(config: dict, paths: dict) -> str:
 
     # Classify each phase as complete or incomplete
     phases = []
-    for bucket in buckets:
+    for bi, bucket in enumerate(buckets):
         name = bucket["name"]
         files = bucket.get("files", [])
         weight = bucket.get("weight", 1.0)
         min_budget = bucket.get("min_budget_usd", 0.0)
         min_complete_bytes = bucket.get("min_complete_bytes", 2048)
         completion_marker = bucket.get("completion_marker", "")
-        min_marker_count = bucket.get("min_marker_count", 0)
+        min_marker_count = _effective_min_marker_count(bi, bucket, config, paths)
         md_files = [f for f in files if f.endswith(".md")]
         target_file = md_files[0] if md_files else (files[0] if files else None)
 
@@ -544,6 +544,9 @@ def _build_phase_guidance(config: dict, paths: dict) -> str:
             lines.append(f">>> CURRENT TASK: Work on {current['name']}.")
             lines.append(f">>> Write to: {current['target_file']}")
         lines.append(f">>> Budget remaining for this phase: ${current['allocation']:.2f}")
+        if phase_budget_exceeded and current_idx in phase_budget_exceeded:
+            lines.append(">>> PHASE BUDGET EXCEEDED — STOP working on this phase immediately.")
+            lines.append(">>> Move to the next phase NOW.")
     else:
         lines.append(">>> All phases complete!")
 
@@ -664,7 +667,8 @@ def build_context(identity: dict, config: dict, paths: dict = None) -> str:
     costs_file = paths["costs_file"] if paths else None
     cost_info = get_summary(costs_file)
     mission = load_mission(paths)
-    phase_guidance = _build_phase_guidance(config, paths) if paths else ""
+    phase_budget_exceeded = config.get("_phase_budget_exceeded")
+    phase_guidance = _build_phase_guidance(config, paths, phase_budget_exceeded=phase_budget_exceeded) if paths else ""
 
     return (
         f"You are {identity['name']} v{identity['version']}, a research agent.\n"
@@ -1682,15 +1686,43 @@ def _save_checkpoints(topic_name: str, checkpoints_hit: set):
     cp_file.write_text(json.dumps({"checkpoints_hit": sorted(checkpoints_hit)}), encoding="utf-8")
 
 
-def _get_current_phase_idx(config: dict, paths: dict) -> int | None:
+def _effective_min_marker_count(bucket_idx: int, bucket: dict, config: dict, paths: dict) -> int:
+    """Return the effective min_marker_count for a bucket.
+
+    If the preceding bucket has selection_checkpoint: true, use the number of
+    selected ideas from phase_filter.json instead of the hardcoded value.
+    """
+    base = bucket.get("min_marker_count", 0)
+    if base <= 0 or bucket_idx == 0:
+        return base
+    buckets = config.get("research_buckets", [])
+    prev = buckets[bucket_idx - 1]
+    if not prev.get("selection_checkpoint"):
+        return base
+    research_dir = paths["research_dir"] if paths else ROOT / "data" / "research"
+    pf_file = research_dir / "phase_filter.json"
+    if pf_file.exists():
+        try:
+            pf = json.loads(pf_file.read_text(encoding="utf-8"))
+            count = len(pf.get("selected_ideas", []))
+            if count > 0:
+                return count
+        except Exception:
+            pass
+    return base
+
+
+def _get_current_phase_idx(config: dict, paths: dict, skip_phases: set = None) -> int | None:
     """Return the index of the first incomplete phase, or None if all complete."""
     buckets = config.get("research_buckets", [])
     research_dir = paths["research_dir"] if paths else ROOT / "data" / "research"
     for i, bucket in enumerate(buckets):
+        if skip_phases and i in skip_phases:
+            continue
         files = bucket.get("files", [])
         min_complete_bytes = bucket.get("min_complete_bytes", 2048)
         completion_marker = bucket.get("completion_marker", "")
-        min_marker_count = bucket.get("min_marker_count", 0)
+        min_marker_count = _effective_min_marker_count(i, bucket, config, paths)
 
         max_size = 0
         primary_content = ""
@@ -1714,6 +1746,63 @@ def _get_current_phase_idx(config: dict, paths: dict) -> int | None:
         if not (bytes_ok and markers_ok):
             return i
     return None
+
+
+def _validate_completion_markers(config: dict, paths: dict) -> list[str]:
+    """Check that completion_marker values actually appear in research files.
+
+    For each bucket with a completion_marker + min_marker_count > 0:
+      - Read the primary .md file
+      - If file > 5KB but marker count == 0 → likely misconfigured marker
+    Returns list of warning strings (empty = all good).
+    """
+    warnings = []
+    buckets = config.get("research_buckets", [])
+    research_dir = paths["research_dir"] if paths else ROOT / "data" / "research"
+    for i, bucket in enumerate(buckets):
+        marker = bucket.get("completion_marker", "")
+        min_count = _effective_min_marker_count(i, bucket, config, paths)
+        if not marker or min_count <= 0:
+            continue
+        files = bucket.get("files", [])
+        md_files = [f for f in files if f.endswith(".md")]
+        if not md_files:
+            continue
+        fpath = research_dir / md_files[0]
+        if not fpath.exists():
+            continue
+        size = fpath.stat().st_size
+        if size <= 5120:  # 5KB threshold
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        count = content.count(marker)
+        if count == 0:
+            warnings.append(
+                f"Phase {i + 1} ({bucket['name']}): file {md_files[0]} is {size} bytes "
+                f"but contains 0 occurrences of completion_marker '{marker}'. "
+                f"The marker is likely misconfigured — the phase will never complete."
+            )
+    return warnings
+
+
+def _get_phase_budget_cap(bucket: dict, config: dict) -> float:
+    """Return the budget cap for a single phase.
+
+    If max_budget_usd is set in bucket config, use it.
+    Otherwise auto-calculate: (weight / total_weight) * max_total_usd * 1.5
+    """
+    if "max_budget_usd" in bucket:
+        return float(bucket["max_budget_usd"])
+    buckets = config.get("research_buckets", [])
+    total_weight = sum(b.get("weight", 1.0) for b in buckets)
+    weight = bucket.get("weight", 1.0)
+    max_total = config.get("budget", {}).get("max_total_usd", 100.0)
+    if total_weight <= 0:
+        return max_total
+    return (weight / total_weight) * max_total * 1.5
 
 
 @cli.command("run-topic")
@@ -1750,10 +1839,49 @@ def run_topic(topic_name, cycles, delay):
         except Exception:
             pass
 
+    # Marker validation: block if completion_marker is likely misconfigured
+    marker_warnings = _validate_completion_markers(config, paths)
+    if marker_warnings:
+        click.echo(f"\n{'='*60}")
+        click.echo("BLOCKED: Completion marker validation failed:")
+        for w in marker_warnings:
+            click.echo(f"  - {w}")
+        click.echo("Fix the completion_marker values in agent_config.yaml, then restart.")
+        click.echo(f"{'='*60}\n")
+        return
+
     cycle_count = 0
     prev_phase_idx = _get_current_phase_idx(config, paths)
+    phase_start_cost = get_total_usd(paths["costs_file"])
+    forced_complete_phases = set()
 
     while True:
+        # Pre-cycle phase budget cap check
+        buckets = config.get("research_buckets", [])
+        if prev_phase_idx is not None and prev_phase_idx < len(buckets):
+            phase_spent = get_total_usd(paths["costs_file"]) - phase_start_cost
+            cap = _get_phase_budget_cap(buckets[prev_phase_idx], config)
+
+            if phase_spent >= cap * 2.0:
+                # HARD BLOCK: force-skip this phase
+                forced_complete_phases.add(prev_phase_idx)
+                click.echo(f"\n>>> HARD CAP: Phase {prev_phase_idx + 1} ({buckets[prev_phase_idx]['name']}) "
+                           f"spent ${phase_spent:.2f} (cap ${cap:.2f}, 200% exceeded). Force-skipping.")
+                config.pop("_phase_budget_exceeded", None)
+                # Advance to next phase without running a cycle
+                prev_phase_idx = _get_current_phase_idx(config, paths, skip_phases=forced_complete_phases)
+                phase_start_cost = get_total_usd(paths["costs_file"])
+                continue
+            elif phase_spent >= cap * 1.0:
+                # SOFT CAP: warn the LLM strongly
+                if "_phase_budget_exceeded" not in config:
+                    config["_phase_budget_exceeded"] = {}
+                config["_phase_budget_exceeded"][prev_phase_idx] = {
+                    "spent": phase_spent, "cap": cap,
+                }
+                click.echo(f">>> SOFT CAP: Phase {prev_phase_idx + 1} spent ${phase_spent:.2f} "
+                           f"(cap ${cap:.2f}). Injecting move-on directive.")
+
         result = run_cycle(config)
         cycle_count += 1
         if result.get("action") in ("budget_stop", "quit"):
@@ -1762,7 +1890,7 @@ def run_topic(topic_name, cycles, delay):
             break
 
         # Selection checkpoint: detect phase transition on phases with selection_checkpoint
-        cur_phase_idx = _get_current_phase_idx(config, paths)
+        cur_phase_idx = _get_current_phase_idx(config, paths, skip_phases=forced_complete_phases)
         buckets = config.get("research_buckets", [])
         if (prev_phase_idx is not None
                 and cur_phase_idx != prev_phase_idx
@@ -1805,6 +1933,10 @@ def run_topic(topic_name, cycles, delay):
                     click.echo(f"{'='*60}\n")
                     break
 
+        # On phase transition: reset phase budget tracking
+        if cur_phase_idx != prev_phase_idx:
+            phase_start_cost = get_total_usd(paths["costs_file"])
+            config.pop("_phase_budget_exceeded", None)
         prev_phase_idx = cur_phase_idx
 
         # Budget checkpoint check

@@ -656,3 +656,153 @@ def test_extract_section_from_text():
 
     result2 = tools._extract_section_from_text(sample, "risk_factors")
     assert "Competition" in result2
+
+
+# --- Phase budget safeguard tests ---
+
+import agent
+
+
+def test_validate_markers_catches_bad_marker(tmp_path):
+    """File > 5KB with wrong marker should produce a warning."""
+    research_dir = tmp_path / "research"
+    research_dir.mkdir()
+    # Create a 6KB file with ## COMPETITIVE ANALYSIS headings but marker says ## PROBLEM
+    content = "# Research\n\n" + ("## COMPETITIVE ANALYSIS #1\nSome content here.\n" * 200)
+    (research_dir / "competitive_analysis.md").write_text(content, encoding="utf-8")
+    assert len(content.encode("utf-8")) > 5120  # sanity
+
+    config = {
+        "research_buckets": [{
+            "name": "Phase 3: Competitive Analysis",
+            "files": ["competitive_analysis.md"],
+            "completion_marker": "## PROBLEM",
+            "min_marker_count": 20,
+        }]
+    }
+    paths = {"research_dir": research_dir}
+    warnings = agent._validate_completion_markers(config, paths)
+    assert len(warnings) == 1
+    assert "## PROBLEM" in warnings[0]
+    assert "misconfigured" in warnings[0].lower()
+
+
+def test_validate_markers_passes_correct(tmp_path):
+    """File > 5KB with correct marker should produce no warning."""
+    research_dir = tmp_path / "research"
+    research_dir.mkdir()
+    content = "# Research\n\n" + ("## PROBLEM #1\nSome problem here.\n" * 200)
+    (research_dir / "unmet_problems.md").write_text(content, encoding="utf-8")
+    assert len(content.encode("utf-8")) > 5120
+
+    config = {
+        "research_buckets": [{
+            "name": "Phase 2: Unmet Problems",
+            "files": ["unmet_problems.md"],
+            "completion_marker": "## PROBLEM",
+            "min_marker_count": 20,
+        }]
+    }
+    paths = {"research_dir": research_dir}
+    warnings = agent._validate_completion_markers(config, paths)
+    assert len(warnings) == 0
+
+
+def test_validate_markers_skips_small_files(tmp_path):
+    """File < 5KB should not trigger a warning even with wrong marker."""
+    research_dir = tmp_path / "research"
+    research_dir.mkdir()
+    content = "# Small file\n\nNot much here.\n"
+    (research_dir / "competitive_analysis.md").write_text(content, encoding="utf-8")
+    assert len(content.encode("utf-8")) < 5120
+
+    config = {
+        "research_buckets": [{
+            "name": "Phase 3: Competitive Analysis",
+            "files": ["competitive_analysis.md"],
+            "completion_marker": "## PROBLEM",
+            "min_marker_count": 20,
+        }]
+    }
+    paths = {"research_dir": research_dir}
+    warnings = agent._validate_completion_markers(config, paths)
+    assert len(warnings) == 0
+
+
+def test_phase_budget_cap_auto():
+    """Auto-calculated cap: (2.0/12.0) * 45 * 1.5 = $11.25."""
+    config = {
+        "budget": {"max_total_usd": 45.0},
+        "research_buckets": [
+            {"name": "Phase 1", "weight": 2.0},
+            {"name": "Phase 2", "weight": 1.5},
+            {"name": "Phase 3", "weight": 2.0},
+            {"name": "Phase 4", "weight": 3.0},
+            {"name": "Phase 5", "weight": 3.5},
+        ],
+    }
+    bucket = config["research_buckets"][0]  # weight 2.0
+    cap = agent._get_phase_budget_cap(bucket, config)
+    assert abs(cap - 11.25) < 0.01
+
+
+def test_phase_budget_cap_explicit():
+    """Explicit max_budget_usd should override auto calculation."""
+    config = {
+        "budget": {"max_total_usd": 45.0},
+        "research_buckets": [
+            {"name": "Phase 1", "weight": 2.0, "max_budget_usd": 20.0},
+            {"name": "Phase 2", "weight": 1.5},
+        ],
+    }
+    bucket = config["research_buckets"][0]
+    cap = agent._get_phase_budget_cap(bucket, config)
+    assert cap == 20.0
+
+
+def test_get_current_phase_idx_skip_phases(tmp_path):
+    """skip_phases={0} should skip phase 0 even if incomplete."""
+    research_dir = tmp_path / "research"
+    research_dir.mkdir()
+    # Both phases incomplete (no files)
+    config = {
+        "research_buckets": [
+            {"name": "Phase 1", "files": ["p1.md"], "min_complete_bytes": 1000},
+            {"name": "Phase 2", "files": ["p2.md"], "min_complete_bytes": 1000},
+        ]
+    }
+    paths = {"research_dir": research_dir}
+
+    # Without skip: returns 0 (first incomplete)
+    assert agent._get_current_phase_idx(config, paths) == 0
+
+    # With skip_phases={0}: returns 1 (skips phase 0)
+    assert agent._get_current_phase_idx(config, paths, skip_phases={0}) == 1
+
+
+def test_effective_min_marker_count_from_selection(tmp_path):
+    """Phase after selection_checkpoint should use selected idea count."""
+    research_dir = tmp_path / "research"
+    research_dir.mkdir()
+    # Write phase_filter.json with 2 selected ideas
+    pf = research_dir / "phase_filter.json"
+    pf.write_text(json.dumps({"selected_ideas": [
+        {"rank": 1, "title": "Idea A"},
+        {"rank": 2, "title": "Idea B"},
+    ]}), encoding="utf-8")
+
+    config = {
+        "research_buckets": [
+            {"name": "Phase 4", "weight": 3.0, "selection_checkpoint": True,
+             "completion_marker": "## IDEA", "min_marker_count": 20},
+            {"name": "Phase 5", "weight": 3.5,
+             "completion_marker": "## PLAYBOOK", "min_marker_count": 20},
+        ]
+    }
+    paths = {"research_dir": research_dir}
+
+    # Phase 5 (index 1) follows a selection_checkpoint phase → should return 2
+    assert agent._effective_min_marker_count(1, config["research_buckets"][1], config, paths) == 2
+
+    # Phase 4 (index 0) has no preceding checkpoint → should return its own value
+    assert agent._effective_min_marker_count(0, config["research_buckets"][0], config, paths) == 20

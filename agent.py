@@ -1734,6 +1734,22 @@ def run_topic(topic_name, cycles, delay):
     review_thresholds = config.get("review_checkpoints", [0.33, 0.66])
     checkpoints_hit = _load_checkpoints(topic_name)
 
+    # Block phase 5 if selection checkpoint hasn't been confirmed
+    cp_file = paths["data_dir"] / "checkpoints.json"
+    if cp_file.exists():
+        try:
+            cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
+            sel_cp = cp_data.get("selection_checkpoint", {})
+            if sel_cp and not sel_cp.get("confirmed", False):
+                click.echo(f"\n{'='*60}")
+                click.echo("BLOCKED: Selection checkpoint not confirmed.")
+                click.echo("  Use the dashboard to select which ideas to advance,")
+                click.echo("  then restart the agent.")
+                click.echo(f"{'='*60}\n")
+                return
+        except Exception:
+            pass
+
     cycle_count = 0
     prev_phase_idx = _get_current_phase_idx(config, paths)
 

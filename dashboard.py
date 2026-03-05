@@ -77,6 +77,7 @@ class NotionConfig(BaseModel):
 
 class LlmConfig(BaseModel):
     provider: str = ""
+    model: str = ""
     api_key: str = ""
     vertex_project: str = ""
     vertex_location: str = ""
@@ -1075,9 +1076,12 @@ def api_start_agent(name: str, delay: int = 10):
 
 @app.post("/api/agents/{name}/stop")
 def api_stop_agent(name: str):
-    """Terminate a running agent subprocess."""
+    """Terminate a running agent subprocess (or acknowledge it already stopped)."""
     if name not in _running_agents:
-        raise HTTPException(404, f"Agent '{name}' is not running")
+        # Agent not tracked — already stopped or server was restarted.
+        # Clean up crashed state and return success so the UI resets.
+        _crashed_agents.discard(name)
+        return {"stopped": name}
 
     entry = _running_agents[name]
     proc = entry["process"]
@@ -1094,6 +1098,7 @@ def api_stop_agent(name: str):
         entry["log_file"].close()
 
     del _running_agents[name]
+    _crashed_agents.discard(name)
     return {"stopped": name}
 
 
@@ -1807,16 +1812,37 @@ def _load_llm_config() -> dict:
     llm = cfg.get("llm", {}) or {}
     provider = llm.get("provider", "") or os.environ.get("LLM_PROVIDER", "")
     api_key = llm.get("api_key", "") or os.environ.get("LLM_API_KEY", "") or os.environ.get("OPENROUTER_API_KEY", "")
+    model = cfg.get("model", "") or os.environ.get("LLM_MODEL", "")
     vertex = cfg.get("vertex", {}) or {}
     vertex_project = vertex.get("project", "") or os.environ.get("VERTEX_PROJECT", "")
     vertex_location = vertex.get("location", "") or os.environ.get("VERTEX_LOCATION", "us-central1")
-    return {"provider": provider, "api_key": api_key, "vertex_project": vertex_project, "vertex_location": vertex_location}
+    return {"provider": provider, "api_key": api_key, "model": model, "vertex_project": vertex_project, "vertex_location": vertex_location}
 
 
 def _save_llm_config(llm_cfg: dict):
-    """Upsert the llm: and vertex: blocks in config.yaml, preserving other content."""
+    """Upsert the llm:, model:, and vertex: blocks in config.yaml, preserving other content."""
     cfg_path = ROOT / "config.yaml"
     text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+
+    # Update top-level model: field
+    model_val = llm_cfg.get("model", "")
+    if model_val:
+        if re.search(r"^model:\s*\S", text, re.MULTILINE):
+            text = re.sub(
+                r"^model:\s*\S.*$",
+                f"model: {model_val}",
+                text,
+                flags=re.MULTILINE,
+            )
+        elif re.search(r"^model:\s*\r?$", text, re.MULTILINE):
+            text = re.sub(
+                r"^model:\s*\r?$",
+                f"model: {model_val}",
+                text,
+                flags=re.MULTILINE,
+            )
+        else:
+            text = f"model: {model_val}\n" + text
 
     # Update llm: block
     lines = ["llm:"]
@@ -1871,6 +1897,7 @@ def api_get_llm_config():
         masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
     return {
         "provider": cfg.get("provider", ""),
+        "model": cfg.get("model", ""),
         "api_key_masked": masked,
         "api_key_set": bool(api_key),
         "vertex_project": cfg.get("vertex_project", ""),
@@ -1884,6 +1911,7 @@ def api_put_llm_config(body: LlmConfig):
     existing = _load_llm_config()
     llm_cfg = {
         "provider": body.provider if body.provider else existing.get("provider", ""),
+        "model": body.model if body.model else existing.get("model", ""),
         "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
         "vertex_project": body.vertex_project if body.vertex_project else existing.get("vertex_project", ""),
         "vertex_location": body.vertex_location if body.vertex_location else existing.get("vertex_location", ""),

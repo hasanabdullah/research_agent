@@ -1369,6 +1369,40 @@ async function renderConfigure() {
   ).join('');
   const isVertex = curProvider === 'vertex';
   const isGemini = curProvider === 'gemini';
+
+  const providerModels = {
+    gemini: [
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+      { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
+    ],
+    vertex: [
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+    ],
+    anthropic: [
+      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+    ],
+    openrouter: [
+      { value: 'anthropic/claude-opus-4.6', label: 'Claude Opus 4.6' },
+      { value: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
+      { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    ],
+    openai: [
+      { value: 'gpt-4o', label: 'GPT-4o' },
+      { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+      { value: 'o3-mini', label: 'o3-mini' },
+    ],
+  };
+  const curModel = llmCfg.model || '';
+  const modelOptions = (providerModels[curProvider] || []).map(m =>
+    `<option value="${m.value}" ${m.value === curModel ? 'selected' : ''}>${m.label}</option>`
+  ).join('');
   const showApiKey = !isVertex;
 
   // Agent Configuration section (mission + agent parameters)
@@ -1405,6 +1439,14 @@ async function renderConfigure() {
           <option value="">Select provider...</option>
           ${providerOptions}
         </select>
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Model</label>
+        <select id="llm-model" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;box-shadow:var(--shadow-sm);">
+          <option value="">Select model...</option>
+          ${modelOptions}
+        </select>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">Current: <code>${escHtml(curModel) || 'not set'}</code></div>
       </div>
       <div id="llm-vertex-fields" style="display:${isVertex ? 'block' : 'none'}">
         <div class="setup-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
@@ -1514,18 +1556,55 @@ function toggleLlmFields() {
   const vertexFields = document.getElementById('llm-vertex-fields');
   const apiKeyField = document.getElementById('llm-apikey-field');
   const geminiHint = document.getElementById('gemini-hint');
+  const modelSelect = document.getElementById('llm-model');
   if (vertexFields) vertexFields.style.display = provider === 'vertex' ? 'block' : 'none';
   if (apiKeyField) apiKeyField.style.display = provider === 'vertex' ? 'none' : 'block';
   if (geminiHint) geminiHint.style.display = provider === 'gemini' ? 'block' : 'none';
+  if (modelSelect) {
+    const providerModels = {
+      gemini: [
+        { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+        { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+        { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+        { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
+      ],
+      vertex: [
+        { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+        { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+        { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+      ],
+      anthropic: [
+        { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+        { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+        { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+      ],
+      openrouter: [
+        { value: 'anthropic/claude-opus-4.6', label: 'Claude Opus 4.6' },
+        { value: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
+        { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+        { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      ],
+      openai: [
+        { value: 'gpt-4o', label: 'GPT-4o' },
+        { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+        { value: 'o3-mini', label: 'o3-mini' },
+      ],
+    };
+    const models = providerModels[provider] || [];
+    modelSelect.innerHTML = '<option value="">Select model...</option>' +
+      models.map(m => `<option value="${m.value}">${m.label}</option>`).join('');
+  }
 }
 
 async function saveLlmConfig(btn) {
   const provider = document.getElementById('llm-provider').value;
+  const model = document.getElementById('llm-model')?.value || '';
   const apiKey = document.getElementById('llm-api-key')?.value || '';
   const vertexProject = document.getElementById('vertex-project')?.value || '';
   const vertexLocation = document.getElementById('vertex-location')?.value || '';
   const body = {};
   if (provider) body.provider = provider;
+  if (model) body.model = model;
   if (apiKey) body.api_key = apiKey;
   if (vertexProject) body.vertex_project = vertexProject;
   if (vertexLocation) body.vertex_location = vertexLocation;

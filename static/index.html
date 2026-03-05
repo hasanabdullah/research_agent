@@ -1900,145 +1900,12 @@ async function renderConfigure() {
 
   const tab = _configSubTab;
 
-  const llmProviders = ['gemini', 'vertex', 'anthropic', 'openrouter', 'openai'];
-  const providerLabels = { gemini: 'Gemini API Key (Google AI Studio)', vertex: 'Vertex AI (Google Cloud)', anthropic: 'Anthropic', openrouter: 'OpenRouter', openai: 'OpenAI' };
-  const curProvider = (llmCfg.provider || '').toLowerCase();
-  const providerOptions = llmProviders.map(p =>
-    `<option value="${p}" ${p === curProvider ? 'selected' : ''}>${providerLabels[p] || p}</option>`
-  ).join('');
-  const isVertex = curProvider === 'vertex';
-  const isGemini = curProvider === 'gemini';
-
-  const providerModels = {
-    gemini: [
-      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-      { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
-    ],
-    vertex: [
-      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-    ],
-    anthropic: [
-      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-    ],
-    openrouter: [
-      { value: 'anthropic/claude-opus-4.6', label: 'Claude Opus 4.6' },
-      { value: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
-      { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    ],
-    openai: [
-      { value: 'gpt-4o', label: 'GPT-4o' },
-      { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-      { value: 'o3-mini', label: 'o3-mini' },
-    ],
-  };
-  const curModel = llmCfg.model || '';
-  const modelOptions = (providerModels[curProvider] || []).map(m =>
-    `<option value="${m.value}" ${m.value === curModel ? 'selected' : ''}>${m.label}</option>`
-  ).join('');
-  const showApiKey = !isVertex;
-
-  // Agent Configuration section (mission + agent parameters)
-  let agentConfigHtml = '';
-  if (state.selected) {
-    const [mission, prompt] = await Promise.all([
-      api(`topics/${state.selected}/mission`),
-      api(`topics/${state.selected}/prompt`)
-    ]);
-    const agentConfigured = !!(mission.content && mission.content.trim() && prompt.content && prompt.content.trim());
-    agentConfigHtml = `
-    <div class="config-section">
-      <h3>Agent Configuration <span style="font-size:11px;font-weight:400;color:${agentConfigured ? '#22c55e' : 'var(--text2)'};margin-left:8px">${agentConfigured ? '&#x2713; Configured' : 'Not configured'}</span></h3>
-      <div style="margin-bottom:16px">
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Research Objective</label>
-        <textarea id="mission-editor">${escHtml(mission.content)}</textarea>
-        <button class="save-btn" onclick="saveMission(this)">Save Research Objective</button>
-      </div>
-      <div>
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Agent Parameters</label>
-        <textarea id="prompt-editor">${escHtml(prompt.content)}</textarea>
-        <button class="save-btn" onclick="savePrompt(this)">Save Parameters</button>
-      </div>
-    </div>`;
-  }
-
-  el.innerHTML = `
-    ${budgetHtml}
-    <div class="config-section">
-      <h3>LLM Configuration <span style="font-size:11px;font-weight:400;color:${llmCfg.api_key_set ? '#22c55e' : 'var(--text2)'};margin-left:8px">${llmCfg.api_key_set ? '&#x2713; Configured' : 'Not configured'}</span></h3>
-      <div style="margin-bottom:8px">
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Provider</label>
-        <select id="llm-provider" onchange="toggleLlmFields()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;box-shadow:var(--shadow-sm);">
-          <option value="">Select provider...</option>
-          ${providerOptions}
-        </select>
-      </div>
-      <div style="margin-bottom:8px">
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Model</label>
-        <select id="llm-model" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;box-shadow:var(--shadow-sm);">
-          <option value="">Select model...</option>
-          ${modelOptions}
-        </select>
-        <div style="font-size:11px;color:var(--text2);margin-top:4px">Current: <code>${escHtml(curModel) || 'not set'}</code></div>
-      </div>
-      <div id="llm-vertex-fields" style="display:${isVertex ? 'block' : 'none'}">
-        <div class="setup-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
-          <span class="setup-chevron">▶</span> Setup Instructions
-        </div>
-        <div class="setup-instructions">
-          <div class="step">
-            <div class="step-num">1</div>
-            <div class="step-body">
-              <div class="step-title">Install Google Cloud CLI</div>
-              <code>brew install google-cloud-sdk</code>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-num">2</div>
-            <div class="step-body">
-              <div class="step-title">Authenticate</div>
-              <code>gcloud auth login</code><br>
-              <code>gcloud auth application-default login</code><br>
-              <span style="font-size:11px;color:var(--text2)">The second command creates credentials that Vertex AI uses for auth.</span>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-num">3</div>
-            <div class="step-body">
-              <div class="step-title">Set your project</div>
-              <code>gcloud config set project YOUR_PROJECT_ID</code>
-            </div>
-          </div>
-          <div class="step">
-            <div class="step-num">4</div>
-            <div class="step-body">
-              <div class="step-title">Install Python dependency</div>
-              <code>pip install google-auth</code>
-              <span style="font-size:11px;color:var(--text2)">(included in <code>pip install -e .</code>)</span>
-            </div>
-          </div>
-        </div>
-        <div style="margin-bottom:8px">
-          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">GCP Project ID</label>
-          <input type="text" id="vertex-project" value="${escHtml(llmCfg.vertex_project || '')}" placeholder="my-project-id" />
-        </div>
-        <div style="margin-bottom:8px">
-          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Location</label>
-          <input type="text" id="vertex-location" value="${escHtml(llmCfg.vertex_location || 'us-central1')}" placeholder="us-central1" />
-        </div>
-      </div>
-      <div id="llm-apikey-field" style="display:${showApiKey ? 'block' : 'none'};margin-bottom:8px">
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Key</label>
-        <input type="password" id="llm-api-key" placeholder="${llmCfg.api_key_masked || 'Enter API key...'}" />
-        <div id="gemini-hint" style="display:${isGemini ? 'block' : 'none'};font-size:11px;color:var(--text2);margin-top:4px">Get a key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">Google AI Studio</a></div>
-      </div>
-      <button class="save-btn" id="llm-config-btn" onclick="saveLlmConfig(this)">Save LLM Config</button>
+  // Sub-tab bar
+  let html = `
+    <div class="config-subtabs">
+      <div class="config-subtab ${tab === 'agent' ? 'active' : ''}" onclick="switchConfigSubTab('agent')">Agent</div>
+      <div class="config-subtab ${tab === 'apikeys' ? 'active' : ''}" onclick="switchConfigSubTab('apikeys')">API Keys</div>
+      <div class="config-subtab ${tab === 'notion' ? 'active' : ''}" onclick="switchConfigSubTab('notion')">Notion</div>
     </div>
   `;
 
@@ -2115,6 +1982,40 @@ async function renderConfigure() {
     const showApiKey = !isVertex;
     const llmMeta = llmCfg.api_key_set ? (providerLabels[curProvider] || curProvider || 'Set') : 'Not configured';
 
+    const providerModels = {
+      gemini: [
+        { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+        { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+        { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+        { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
+      ],
+      vertex: [
+        { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+        { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+        { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+      ],
+      anthropic: [
+        { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+        { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+        { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+      ],
+      openrouter: [
+        { value: 'anthropic/claude-opus-4.6', label: 'Claude Opus 4.6' },
+        { value: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
+        { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+        { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      ],
+      openai: [
+        { value: 'gpt-4o', label: 'GPT-4o' },
+        { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+        { value: 'o3-mini', label: 'o3-mini' },
+      ],
+    };
+    const curModel = llmCfg.model || '';
+    const modelOptions = (providerModels[curProvider] || []).map(m =>
+      `<option value="${m.value}" ${m.value === curModel ? 'selected' : ''}>${m.label}</option>`
+    ).join('');
+
     html += `
     <div class="config-section">
       <div class="config-section-header" onclick="toggleConfigSection('llm')">
@@ -2128,6 +2029,14 @@ async function renderConfigure() {
             <option value="">Select provider...</option>
             ${providerOptions}
           </select>
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Model</label>
+          <select id="llm-model" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;box-shadow:var(--shadow-sm);">
+            <option value="">Select model...</option>
+            ${modelOptions}
+          </select>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px">Current: <code>${escHtml(curModel) || 'not set'}</code></div>
         </div>
         <div id="llm-vertex-fields" style="display:${isVertex ? 'block' : 'none'}">
           <div class="setup-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">

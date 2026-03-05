@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 
 from costs import check_budget, get_summary, get_total_usd, record_call
 from llm import get_client, resolve_model, completions_with_retry
+from openai import RateLimitError, APIError
 from supervisor import review_proposal
 from templates import apply_template, list_templates
 from tools import TOOL_DEFINITIONS, get_active_tools, dispatch_tool, reset_web_counters, set_paths, _resolve_file_path
@@ -784,6 +785,72 @@ def _repair_tool_args(name: str, raw: str) -> dict | None:
     return None
 
 
+def generate_cycle_digest(patches_processed, action, summary, cycle_num, config, costs_file):
+    """Generate a short structured digest of what happened in this cycle via LLM."""
+    try:
+        # Build content description from patches or reflection
+        parts = []
+        for p in patches_processed:
+            path = p.get("path", "unknown")
+            reasoning = p.get("reasoning", "")
+            diff = p.get("diff", "")
+            status = p.get("status", "applied")
+            parts.append(f"File: {path} (status: {status})\nReasoning: {reasoning}\nDiff:\n{diff[:1500]}")
+
+        if parts:
+            content_desc = "\n---\n".join(parts)
+        elif action == "reflect":
+            content_desc = f"Reflection/observation:\n{summary}"
+        else:
+            content_desc = f"Action: {action}\nSummary: {summary}"
+
+        user_msg = (
+            "Extract the key knowledge from this research cycle as 2-4 bullet points.\n"
+            "Rules:\n"
+            "1. Each bullet MUST start with '- '\n"
+            "2. State the knowledge itself, NOT what the agent did. "
+            "Write facts, findings, and data — never use action verbs like "
+            "'Added', 'Documented', 'Highlighted', 'Included', 'Noted', 'Updated', 'Created'.\n"
+            "3. Include specific numbers, names, sources, and data points\n"
+            "4. You MUST output multiple bullets (at least 2), each on its own line\n"
+            "5. Output ONLY the bullet list, nothing else\n\n"
+            "Example — BAD (describes agent actions):\n"
+            "- Documented UNEP data showing 6x resource gap in trend_evidence.md\n"
+            "- Added circular economy section with $4.5T opportunity\n\n"
+            "Example — GOOD (states the knowledge):\n"
+            "- HICs consume 6x more resources and cause 10x climate impact vs LICs (UNEP 2024)\n"
+            "- Circular economy transition represents a $4.5T global opportunity by 2030\n"
+            "- DePIN network capacity estimated at 25%, down from earlier 40% projection\n\n"
+            f"## Cycle {cycle_num} content:\n{content_desc[:3000]}"
+        )
+
+        pricing = config.get("pricing", {"input_per_mtok": 1.0, "output_per_mtok": 5.0})
+        client = get_client()
+        # Use scaffold_model (cheaper/faster) for digest generation
+        digest_model = config.get("scaffold_model", config.get("model", "anthropic/claude-opus-4.6"))
+        response = completions_with_retry(
+            client,
+            model=resolve_model(digest_model),
+            max_tokens=400,
+            messages=[
+                {"role": "user", "content": user_msg},
+            ],
+        )
+
+        record_call(
+            response.usage.prompt_tokens or 0,
+            response.usage.completion_tokens or 0,
+            pricing,
+            label=f"cycle_{cycle_num}_digest",
+            costs_file=costs_file,
+        )
+
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        click.echo(f"  (digest generation failed: {e})")
+        return ""
+
+
 def run_cycle(config: dict) -> dict:
     """Execute one Wake -> Reflect -> Plan -> Act -> Sleep cycle."""
     paths = resolve_topic_paths(config)
@@ -839,8 +906,8 @@ def run_cycle(config: dict) -> dict:
         )
 
         record_call(
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
+            response.usage.prompt_tokens or 0,
+            response.usage.completion_tokens or 0,
             pricing,
             label=f"cycle_{cycle_num}_turn_{turn}",
             costs_file=costs_file,
@@ -915,6 +982,7 @@ def run_cycle(config: dict) -> dict:
 
     # Process all pending patches
     applied = False
+    patches_processed = []
     mode = config.get("mode", "full")
     research_dir = config.get("research_dir", "data/research")
     pending_patches = sorted(patches_dir.glob("*.patch")) if patches_dir.exists() else []
@@ -940,6 +1008,7 @@ def run_cycle(config: dict) -> dict:
                 patch_data["status"] = "rejected"
                 patch_file.write_text(json.dumps(patch_data, indent=2), encoding="utf-8")
                 action = "rejected"
+                patches_processed.append(patch_data)
                 continue
 
             click.echo(f"Auto-approving research file: {patch_data['path']}")
@@ -947,6 +1016,7 @@ def run_cycle(config: dict) -> dict:
         elif mode == "research" and not is_research:
             click.echo(f"Research mode — skipping code edit: {patch_data['path']}")
             action = "skipped"
+            patches_processed.append(patch_data)
             continue
         else:
             # Full mode — human approval gate
@@ -976,6 +1046,7 @@ def run_cycle(config: dict) -> dict:
             action = "applied"
             applied = True
             summary = f"Applied {patch_data['path']}: {patch_data['reasoning'][:100]}"
+            patches_processed.append(patch_data)
 
             patch_file.unlink(missing_ok=True)
 
@@ -984,13 +1055,20 @@ def run_cycle(config: dict) -> dict:
             patch_data["status"] = "rejected"
             patch_file.write_text(json.dumps(patch_data, indent=2), encoding="utf-8")
             action = "rejected"
+            patches_processed.append(patch_data)
         elif choice == "s":
             click.echo("Skipped for now.")
             action = "skipped"
+            patches_processed.append(patch_data)
         elif choice == "q":
             click.echo("Quitting.")
             action = "quit"
             break
+
+    # Generate cycle digest
+    digest = generate_cycle_digest(patches_processed, action, summary, cycle_num, config, costs_file)
+    if digest:
+        click.echo(f"Cycle digest:\n{digest}")
 
     # Sleep: log cycle
     cost_info = get_summary(costs_file)
@@ -1002,6 +1080,8 @@ def run_cycle(config: dict) -> dict:
         "timestamp": ts,
         "cost_after": cost_info["total_usd"],
     }
+    if digest:
+        cycle_record["digest"] = digest
     log_cycle(cycle_record, paths)
 
     click.echo(f"\nCycle {cycle_num} complete. Action: {action}")
@@ -1855,6 +1935,9 @@ def run_topic(topic_name, cycles, delay):
     phase_start_cost = get_total_usd(paths["costs_file"])
     forced_complete_phases = set()
 
+    max_consecutive_errors = 5
+    consecutive_errors = 0
+
     while True:
         # Pre-cycle phase budget cap check
         buckets = config.get("research_buckets", [])
@@ -1882,7 +1965,27 @@ def run_topic(topic_name, cycles, delay):
                 click.echo(f">>> SOFT CAP: Phase {prev_phase_idx + 1} spent ${phase_spent:.2f} "
                            f"(cap ${cap:.2f}). Injecting move-on directive.")
 
-        result = run_cycle(config)
+        try:
+            result = run_cycle(config)
+            consecutive_errors = 0  # reset on success
+        except (RateLimitError, APIError) as e:
+            consecutive_errors += 1
+            wait = min(60 * consecutive_errors, 300)  # 60s, 120s, ... up to 5min
+            click.echo(f"  Transient error: {e}. Waiting {wait}s before retry... ({consecutive_errors}/{max_consecutive_errors})")
+            if consecutive_errors >= max_consecutive_errors:
+                click.echo("  Too many consecutive errors — stopping.")
+                break
+            time.sleep(wait)
+            continue
+        except Exception as e:
+            click.echo(f"  Unexpected error in cycle: {e}")
+            consecutive_errors += 1
+            if consecutive_errors >= max_consecutive_errors:
+                click.echo("  Too many consecutive errors — stopping.")
+                break
+            time.sleep(30)
+            continue
+
         cycle_count += 1
         if result.get("action") in ("budget_stop", "quit"):
             break

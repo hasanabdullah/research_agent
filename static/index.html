@@ -52,7 +52,7 @@
   .tab { padding: 12px 14px; font-size: 13px; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; transition: color 0.15s ease; }
   .tab:hover { color: var(--text); }
   .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-  #content { flex: 1; overflow-y: auto; padding: 28px 32px; background: var(--bg); }
+  #content { flex: 1; overflow-y: auto; padding: 28px 10%; background: var(--bg); }
   #empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text2); font-size: 14px; }
 
   /* Monitor tab */
@@ -73,6 +73,62 @@
   .cycle-row .action { color: var(--yellow); min-width: 100px; font-weight: 500; }
   .cycle-row .summary { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cycle-row .cost { color: var(--text2); font-family: var(--mono); font-size: 12px; }
+
+  /* Activity feed */
+  .activity-feed { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); margin-top: 20px; }
+  .activity-feed h3 { font-size: 14px; padding: 14px 18px; border-bottom: 1px solid var(--border); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .activity-feed .feed-list { max-height: 480px; overflow-y: auto; }
+  .feed-item { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-item .feed-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+  .feed-item .feed-dot.write { background: var(--green); }
+  .feed-item .feed-dot.reflect { background: var(--yellow); }
+  .feed-item .feed-dot.checkpoint { background: var(--accent); }
+  .feed-item .feed-dot.other { background: var(--text2); }
+  .feed-item .feed-body { flex: 1; min-width: 0; }
+  .feed-item .feed-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .feed-item .feed-cycle { font-size: 11px; font-weight: 600; color: var(--text2); }
+  .feed-item .feed-file { font-size: 11px; font-family: var(--mono); color: var(--accent); background: rgba(79,70,229,0.08); padding: 1px 6px; border-radius: 4px; }
+  .feed-item .feed-time { font-size: 11px; color: var(--text2); margin-left: auto; flex-shrink: 0; }
+  .feed-item .feed-summary { font-size: 13px; color: var(--text); line-height: 1.5; }
+  .feed-item .feed-digest { font-size: 12.5px; color: var(--text); line-height: 1.5; padding-left: 4px; }
+  .feed-item .feed-digest ul { margin: 2px 0 0 0; padding-left: 18px; }
+  .feed-item .feed-digest li { margin-bottom: 2px; }
+  .feed-item .feed-digest p { margin: 2px 0; }
+  .feed-item .feed-cost { font-size: 11px; color: var(--text2); font-family: var(--mono); margin-top: 3px; }
+  /* Phase pipeline */
+  .phase-pipeline { display: flex; align-items: center; gap: 0; overflow-x: auto; padding: 16px 0 20px; }
+  .phase-node { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; min-width: 90px; padding: 4px 8px; transition: opacity 0.15s; }
+  .phase-node:hover { opacity: 0.8; }
+  .phase-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); background: var(--bg); transition: all 0.2s; }
+  .phase-dot.complete { background: var(--green); border-color: var(--green); }
+  .phase-dot.current { background: var(--accent); border-color: var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  .phase-dot.queued { background: var(--bg3); border-color: var(--border); }
+  .phase-dot.empty { background: var(--bg); border-color: var(--border); }
+  .phase-label { font-size: 11px; color: var(--text2); text-align: center; max-width: 100px; line-height: 1.3; font-weight: 500; }
+  .phase-size { font-size: 10px; color: var(--text2); font-family: var(--mono); }
+  .phase-connector { width: 32px; height: 2px; background: var(--border); flex-shrink: 0; margin-bottom: 28px; }
+  .phase-connector.done { background: var(--green); }
+
+  /* Phase summary sections */
+  .phase-summary-section { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; box-shadow: var(--shadow-sm); overflow: hidden; }
+  .phase-summary-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; cursor: pointer; user-select: none; transition: background 0.15s ease; }
+  .phase-summary-header:hover { background: var(--bg2); }
+  .phase-summary-header .phase-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .phase-summary-header .phase-title .arrow { font-size: 11px; color: var(--text2); transition: transform 0.2s ease; display: inline-block; }
+  .phase-summary-header .phase-title .arrow.open { transform: rotate(90deg); }
+  .phase-summary-body { border-top: 1px solid var(--border); padding: 18px; display: none; }
+  .phase-summary-body.open { display: block; }
+  .phase-summary-status { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+  .phase-summary-status.complete { background: #d1fae5; color: #065f46; }
+  .phase-summary-status.current { background: #e0e7ff; color: #3730a3; }
+  .phase-summary-status.queued { background: var(--bg3); color: var(--text2); }
+  .phase-summary-status.empty { background: var(--bg3); color: var(--text2); }
+
+  .activity-feed .feed-list.viz-mode { max-height: none; overflow-y: visible; padding: 12px; }
+
+  /* Mind map container */
+  .mindmap-container { overflow-x: auto; overflow-y: visible; padding: 12px; }
 
   /* Health panel */
   .health-panel { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 24px; box-shadow: var(--shadow-sm); }
@@ -146,9 +202,31 @@
   .bucket-save-btn.saved { background: var(--green); }
   .bucket-status { font-size: 11px; color: var(--text2); }
 
+  /* Config sub-tabs */
+  .config-subtabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 24px; gap: 0; }
+  .config-subtab { padding: 9px 16px; font-size: 12px; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; transition: color 0.15s ease; }
+  .config-subtab:hover { color: var(--text); }
+  .config-subtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Research header */
+  .research-header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+  .research-header .push-all-btn { background: #000; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 500; cursor: pointer; transition: opacity 0.15s ease; white-space: nowrap; }
+  .research-header .push-all-btn:hover { opacity: 0.85; }
+  .research-header .push-all-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .research-header .notion-status { font-size: 12px; color: var(--text2); }
+  .research-header .notion-status a { color: var(--accent); font-weight: 500; text-decoration: none; }
+  .research-header .notion-status a:hover { text-decoration: underline; }
+
   /* Configure tab */
-  .config-section { margin-bottom: 28px; }
-  .config-section h3 { font-size: 13px; color: var(--text); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+  .config-section { margin-bottom: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
+  .config-section-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; cursor: pointer; user-select: none; transition: background 0.15s ease; }
+  .config-section-header:hover { background: var(--bg2); }
+  .config-section-header h3 { font-size: 13px; color: var(--text); margin-bottom: 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; display: flex; align-items: center; gap: 8px; }
+  .config-section-header h3 .arrow { font-size: 11px; color: var(--text2); transition: transform 0.2s ease; display: inline-block; }
+  .config-section-header h3 .arrow.open { transform: rotate(90deg); }
+  .config-section-header .config-section-meta { font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 6px; }
+  .config-section-body { border-top: 1px solid var(--border); padding: 18px; display: none; }
+  .config-section-body.open { display: block; }
   .config-section textarea { width: 100%; min-height: 200px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 13px; padding: 14px; resize: vertical; line-height: 1.6; box-shadow: var(--shadow-sm); transition: border-color 0.15s ease; }
   .config-section textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
   .config-section input[type="number"] { width: 120px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 13px; padding: 8px 12px; box-shadow: var(--shadow-sm); transition: border-color 0.15s ease; }
@@ -401,6 +479,8 @@ async function refreshData() {
     // Refresh current tab content
     if (state.selected && state.tab === 'monitor') {
       renderMonitor();
+    } else if (state.selected && state.tab === 'insights') {
+      renderInsights();
     } else if (state.selected && state.tab === 'research') {
       renderResearch();
     }
@@ -703,18 +783,126 @@ async function renderInsights() {
   const el = document.getElementById('content');
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
 
-  const [files, existing] = await Promise.all([
+  const iTab = _insightsSubTab;
+
+  // Sub-tab bar
+  let html = `
+    <div class="config-subtabs">
+      <div class="config-subtab ${iTab === 'summary' ? 'active' : ''}" onclick="switchInsightsSubTab('summary')">Summary</div>
+      <div class="config-subtab ${iTab === 'mindmap' ? 'active' : ''}" onclick="switchInsightsSubTab('mindmap')">Mindmap</div>
+    </div>
+  `;
+
+  if (iTab === 'mindmap') {
+    // Outline sub-tab — fetch summary which includes the outline
+    const summaryData = await api(`topics/${state.selected}/summary`).catch(() => ({}));
+    if (summaryData && summaryData.outline) {
+      html += buildMindmapSvg(summaryData.outline);
+    } else {
+      html += '<div style="color:var(--text2);padding:20px;text-align:center">No outline yet. Click <b>Summarize Research</b> on the Summary tab to generate the research outline.</div>';
+    }
+    el.innerHTML = html;
+    initMindmapTooltips();
+    return;
+  }
+
+  // Summary sub-tab
+  const [files, existing, bucketsData] = await Promise.all([
     api(`topics/${state.selected}/research`),
-    api(`topics/${state.selected}/summary`).catch(() => ({ summary: null, generated_at: null })),
+    api(`topics/${state.selected}/summary`).catch(() => ({ summary: null, generated_at: null, phase_summaries: null })),
+    api(`topics/${state.selected}/buckets`).catch(() => ({ has_buckets: false, buckets: [] })),
   ]);
 
   const hasResearch = files.length > 0 && files.some(f => f.size > 0);
 
+  // No research at all
+  if (!hasResearch && !existing.summary) {
+    html += '<div style="color:var(--text2);padding:20px;text-align:center">No research output yet. Run some cycles to generate research.</div>';
+    el.innerHTML = html;
+    return;
+  }
+
+  // No buckets — flat view (original behavior)
+  if (!bucketsData.has_buckets) {
+    renderInsightsFlat(el, existing, hasResearch, html);
+    return;
+  }
+
+  // Phase-structured view
+  const buckets = bucketsData.buckets;
+  const phaseSummaries = existing.phase_summaries || [];
+  const phaseSummaryMap = {};
+  phaseSummaries.forEach(ps => { phaseSummaryMap[ps.bucket_index] = ps; });
+
+  // Header
+  const hasSummary = existing.summary || phaseSummaries.some(ps => ps.summary);
+  const btnLabel = hasSummary ? 'Re-summarize All' : 'Summarize Research';
+  html += `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div>
+        <h2 style="font-size:18px;margin-bottom:4px">${escHtml(state.selected)} — Insights</h2>
+        ${existing.generated_at ? `<div id="summary-timestamp" style="font-size:12px;color:var(--text2)">Last summarized: ${formatTimestamp(existing.generated_at)}</div>` : '<div id="summary-timestamp" style="font-size:12px;color:var(--text2)"></div>'}
+      </div>
+      <button class="save-btn" id="summarize-btn" onclick="summarizePhases()" style="margin:0">${btnLabel}</button>
+    </div>
+  `;
+
+  // Derive status for each bucket (fallback if backend hasn't returned it)
+  buckets.forEach(b => { b.status = b.status || (b.total_size > 0 ? 'current' : 'queued'); });
+
+  // Executive Summary section at top
+  html += `
+    <div class="phase-summary-section" id="phase-section-executive" style="margin-bottom:20px">
+      <div class="phase-summary-header" onclick="togglePhaseSummary('executive')">
+        <div class="phase-title">
+          <span class="arrow open">&#9654;</span>
+          Executive Summary
+        </div>
+      </div>
+      <div class="phase-summary-body open" id="phase-body-executive">
+        ${existing.summary
+          ? `<div class="md-content">${renderMd(existing.summary)}</div>`
+          : `<div style="color:var(--text2);font-size:13px">No executive summary yet. Click "${btnLabel}" to generate.</div>`
+        }
+      </div>
+    </div>
+  `;
+
+  // Per-phase collapsible sections
+  buckets.forEach((b, i) => {
+    const ps = phaseSummaryMap[i];
+    const st = b.status;
+    const isOpen = st === 'current' ? ' open' : '';
+    const arrowOpen = st === 'current' ? ' open' : '';
+    html += `
+      <div class="phase-summary-section" id="phase-section-${i}">
+        <div class="phase-summary-header" onclick="togglePhaseSummary(${i})">
+          <div class="phase-title">
+            <span class="arrow${arrowOpen}">&#9654;</span>
+            ${escHtml(b.name)}
+          </div>
+          <span class="phase-summary-status ${st}">${st}</span>
+        </div>
+        <div class="phase-summary-body${isOpen}" id="phase-body-${i}">
+          ${ps && ps.summary
+            ? `<div class="md-content">${renderMd(ps.summary)}</div>`
+            : `<div style="color:var(--text2);font-size:13px">No summary yet for this phase.</div>`
+          }
+        </div>
+      </div>
+    `;
+  });
+
+  el.innerHTML = html;
+}
+
+function renderInsightsFlat(el, existing, hasResearch, htmlPrefix) {
+  const pre = htmlPrefix || '';
   if (existing.summary) {
-    el.innerHTML = `
+    el.innerHTML = pre + `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <div>
-          <h2 style="font-size:18px;margin-bottom:4px">${state.selected} — Insights</h2>
+          <h2 style="font-size:18px;margin-bottom:4px">${escHtml(state.selected)} — Insights</h2>
           <div id="summary-timestamp" style="font-size:12px;color:var(--text2)">Last summarized: ${formatTimestamp(existing.generated_at)}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -728,9 +916,9 @@ async function renderInsights() {
       </div>
     `;
   } else if (hasResearch) {
-    el.innerHTML = `
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px">
-        <div style="color:var(--text2);font-size:15px">No summary yet for <strong style="color:var(--text)">${state.selected}</strong></div>
+    el.innerHTML = pre + `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px 0">
+        <div style="color:var(--text2);font-size:15px">No summary yet for <strong style="color:var(--text)">${escHtml(state.selected)}</strong></div>
         <div style="display:flex;gap:8px">
           <button class="save-btn" id="summarize-btn" onclick="summarizeTopic()" style="margin:0;font-size:14px;padding:10px 24px">Summarize Research</button>
         </div>
@@ -739,8 +927,290 @@ async function renderInsights() {
       <div id="summary-timestamp" style="display:none"></div>
     `;
   } else {
-    el.innerHTML = '<div id="empty-state">No research output yet. Run some cycles to generate research.</div>';
+    el.innerHTML = pre + '<div style="color:var(--text2);padding:20px;text-align:center">No research output yet. Run some cycles to generate research.</div>';
   }
+}
+
+function togglePhaseSummary(index) {
+  const body = document.getElementById(`phase-body-${index}`);
+  const section = document.getElementById(`phase-section-${index}`);
+  if (!body || !section) return;
+  const arrow = section.querySelector('.phase-title .arrow');
+  body.classList.toggle('open');
+  if (arrow) arrow.classList.toggle('open');
+}
+
+async function summarizePhases() {
+  const btn = document.getElementById('summarize-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Summarizing...';
+
+  // Show generating state on each phase body
+  document.querySelectorAll('.phase-summary-body').forEach(body => {
+    body.classList.add('open');
+    body.innerHTML = '<div style="color:var(--text2);font-size:13px">Generating summary...</div>';
+  });
+  // Open all arrows
+  document.querySelectorAll('.phase-title .arrow').forEach(a => a.classList.add('open'));
+
+  try {
+    await api(`topics/${state.selected}/summarize-phases`, { method: 'POST' });
+    // Re-render with new data
+    await renderInsights();
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e);
+    // Reset all phase bodies with error
+    document.querySelectorAll('.phase-summary-body').forEach(body => {
+      body.innerHTML = `<div style="color:var(--red);font-size:13px">Failed to summarize: ${escHtml(msg)}</div>`;
+    });
+    if (btn) {
+      btn.textContent = 'Summarize Research';
+      btn.disabled = false;
+    }
+  }
+}
+
+function parseCycleData(c) {
+  const summary = c.summary || '';
+  const fileMatch = summary.match(/data\/research\/(\S+\.md)/);
+  const fileName = fileMatch ? fileMatch[1] : '';
+  const action = c.action || 'unknown';
+  let dotClass = 'other';
+  if (action === 'applied' || action === 'append') dotClass = 'write';
+  else if (action === 'reflect') dotClass = 'reflect';
+  else if (action === 'checkpoint_review' || action === 'selection_checkpoint') dotClass = 'checkpoint';
+  let cleanSummary = summary.replace(/^Applied\s+data\/research\/\S+:\s*/i, '');
+  if (!cleanSummary) cleanSummary = action;
+  const time = c.timestamp ? new Date(c.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const cost = c.cost_after != null ? `$${c.cost_after.toFixed(4)}` : '';
+  return { ...c, fileName, action, dotClass, cleanSummary, time, cost };
+}
+
+function buildListView(sorted) {
+  return sorted.map(c => {
+    const d = parseCycleData(c);
+    return `<div class="feed-item">
+      <div class="feed-dot ${d.dotClass}"></div>
+      <div class="feed-body">
+        <div class="feed-meta">
+          <span class="feed-cycle">Cycle ${c.cycle || '?'}</span>
+          ${d.fileName ? `<span class="feed-file">${d.fileName}</span>` : ''}
+          <span class="feed-time">${d.time}</span>
+        </div>
+        ${c.digest
+          ? `<div class="feed-digest">${renderMd(c.digest)}</div>`
+          : `<div class="feed-summary">${escHtml(d.cleanSummary)}</div>`}
+        ${d.cost ? `<div class="feed-cost">${d.cost}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function buildMindmapSvg(outline) {
+  if (!outline) return '';
+
+  const L1_W = 160, L2_W = 170;
+  const LINE_H = 16;             // line height for wrapped text
+  const PAD_V = 10, PAD_H = 10;  // padding inside boxes
+  const L1_GAP_X = 28;
+  const L2_GAP_Y = 8;
+  const L1_OFFSET_Y = 80;
+  const L2_OFFSET_Y = 50;
+  const PAD_X = 40, PAD_TOP = 30, PAD_BOT = 30;
+  const ROOT_RX = 19;
+
+  const statusColors = { complete: '#10b981', current: '#f59e0b', queued: '#6b7280' };
+  const statusFills  = { complete: '#d1fae520', current: '#f59e0b18', queued: '#6b728012' };
+
+  // Approximate char width for wrapping (Inter ~6.5px at 11px, ~7px at 12px, ~7.5px at 14px)
+  function wrapText(text, fontSize, boxW) {
+    if (!text) return [''];
+    const charW = fontSize <= 11 ? 6.2 : fontSize <= 12 ? 6.8 : 7.5;
+    const maxChars = Math.floor((boxW - PAD_H * 2) / charW);
+    if (maxChars < 4) return [text];
+    const words = text.split(/\s+/);
+    const lines = [];
+    let cur = '';
+    words.forEach(w => {
+      const test = cur ? cur + ' ' + w : w;
+      if (test.length <= maxChars) { cur = test; }
+      else { if (cur) lines.push(cur); cur = w; }
+    });
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [''];
+  }
+
+  function boxH(lines) { return PAD_V * 2 + lines.length * LINE_H; }
+
+  const children = (outline.children || []);
+
+  // Root text
+  const rootFontSize = 14;
+  const rootW = 180;
+  const rootLines = wrapText(outline.label, rootFontSize, rootW);
+  const rootH = boxH(rootLines);
+
+  if (children.length === 0) {
+    const w = rootW + PAD_X * 2, h = rootH + PAD_TOP * 2;
+    const cx = w / 2, cy = h / 2;
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="font-family:Inter,sans-serif">`;
+    svg += `<rect x="${cx - rootW/2}" y="${cy - rootH/2}" width="${rootW}" height="${rootH}" rx="${ROOT_RX}" fill="#4f46e5"/>`;
+    const textY = cy - ((rootLines.length - 1) * LINE_H) / 2 + 4;
+    rootLines.forEach((line, li) => {
+      svg += `<text x="${cx}" y="${textY + li * LINE_H}" text-anchor="middle" fill="#fff" font-size="${rootFontSize}" font-weight="700">${escHtml(line)}</text>`;
+    });
+    svg += `</svg>`;
+    return `<div class="mindmap-container">${svg}</div>`;
+  }
+
+  // Pre-compute L1 and L2 sizes for dynamic heights
+  const themeMeta = children.map(t => {
+    const l1Lines = wrapText(t.label, 12, L1_W - 28); // leave room for dot
+    const l1H = boxH(l1Lines);
+    const findings = (t.children || []).map(f => {
+      const fLines = wrapText(f.label, 11, L2_W);
+      return { node: f, lines: fLines, h: boxH(fLines) };
+    });
+    const colH = findings.length > 0
+      ? L2_OFFSET_Y + findings.reduce((s, f) => s + f.h + L2_GAP_Y, 0) - L2_GAP_Y
+      : 0;
+    return { theme: t, l1Lines, l1H, findings, colH };
+  });
+
+  // Use max L1 height so the L1 row is visually aligned
+  const maxL1H = Math.max(...themeMeta.map(m => m.l1H));
+  const l1RowW = children.length * L1_W + (children.length - 1) * L1_GAP_X;
+  const maxColH = Math.max(0, ...themeMeta.map(m => m.colH));
+
+  const SVG_W = Math.max(l1RowW + PAD_X * 2, rootW + PAD_X * 2);
+  const SVG_H = PAD_TOP + rootH + L1_OFFSET_Y + maxL1H + maxColH + PAD_BOT;
+
+  const rootCx = SVG_W / 2;
+  const rootCy = PAD_TOP + rootH / 2;
+  const l1RowTopY = rootCy + rootH / 2 + L1_OFFSET_Y;
+  const l1StartX = (SVG_W - l1RowW) / 2;
+
+  let paths = '';
+  let l2Nodes = '';
+  let l1Nodes = '';
+
+  themeMeta.forEach((meta, i) => {
+    const { theme, l1Lines, l1H, findings } = meta;
+    const status = theme.status || 'queued';
+    const sColor = statusColors[status] || statusColors.queued;
+    const sFill = statusFills[status] || statusFills.queued;
+
+    const l1X = l1StartX + i * (L1_W + L1_GAP_X);
+    const l1Cx = l1X + L1_W / 2;
+    const l1Y = l1RowTopY;
+    const l1CenterY = l1Y + maxL1H / 2;
+
+    // Bezier: root bottom → L1 top
+    const rootBottomY = rootCy + rootH / 2;
+    const cpY = (rootBottomY + l1Y) / 2;
+    paths += `<path d="M${rootCx},${rootBottomY} C${rootCx},${cpY} ${l1Cx},${cpY} ${l1Cx},${l1Y}" fill="none" stroke="${sColor}" stroke-opacity="0.5" stroke-width="2.5"/>`;
+
+    // L1 node — use maxL1H so all boxes align
+    l1Nodes += `<rect x="${l1X}" y="${l1Y}" width="${L1_W}" height="${maxL1H}" rx="7" fill="${sFill}" stroke="${sColor}" stroke-width="1.5"/>`;
+    l1Nodes += `<circle cx="${l1X + 14}" cy="${l1CenterY}" r="4" fill="${sColor}"/>`;
+    const l1TextY = l1CenterY - ((l1Lines.length - 1) * LINE_H) / 2 + 4;
+    l1Lines.forEach((line, li) => {
+      l1Nodes += `<text x="${l1X + 26}" y="${l1TextY + li * LINE_H}" text-anchor="start" fill="#1a1a2e" font-size="12" font-weight="600">${escHtml(line)}</text>`;
+    });
+
+    // L2 findings
+    if (findings.length > 0) {
+      let fY = l1Y + maxL1H + L2_OFFSET_Y;
+      const l1BottomY = l1Y + maxL1H;
+
+      findings.forEach(f => {
+        const fH = f.h;
+        const fCy = fY + fH / 2;
+        const l2X = l1Cx - L2_W / 2;
+
+        // Bezier: L1 bottom → L2 top
+        const cpFY = (l1BottomY + fY) / 2;
+        paths += `<path d="M${l1Cx},${l1BottomY} C${l1Cx},${cpFY} ${l1Cx},${cpFY} ${l1Cx},${fY}" fill="none" stroke="#d1d5db" stroke-width="1.5"/>`;
+
+        // L2 node
+        const hasDetail = f.node.detail && f.node.detail.trim();
+        const hoverAttr = hasDetail ? ` class="chart-hover" data-tip="${escHtml(f.node.detail)}" data-color="${sColor}"` : '';
+        l2Nodes += `<rect x="${l2X}" y="${fY}" width="${L2_W}" height="${fH}" rx="5" fill="#f8f9fb" stroke="#e2e4e9" stroke-width="1"${hoverAttr} style="cursor:${hasDetail ? 'pointer' : 'default'}"/>`;
+        const fTextY = fCy - ((f.lines.length - 1) * LINE_H) / 2 + 4;
+        f.lines.forEach((line, li) => {
+          l2Nodes += `<text x="${l1Cx}" y="${fTextY + li * LINE_H}" text-anchor="middle" fill="#6b7280" font-size="11" font-weight="400" pointer-events="none">${escHtml(line)}</text>`;
+        });
+
+        fY += fH + L2_GAP_Y;
+      });
+    }
+  });
+
+  // Build SVG (render order: paths → L2 → L1 → root)
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SVG_W}" height="${SVG_H}" viewBox="0 0 ${SVG_W} ${SVG_H}" style="font-family:Inter,sans-serif;display:block;margin:0 auto">`;
+  svg += paths;
+  svg += l2Nodes;
+  svg += l1Nodes;
+  // Root node
+  svg += `<rect x="${rootCx - rootW/2}" y="${rootCy - rootH/2}" width="${rootW}" height="${rootH}" rx="${ROOT_RX}" fill="#4f46e5"/>`;
+  const rootTextY = rootCy - ((rootLines.length - 1) * LINE_H) / 2 + 4;
+  rootLines.forEach((line, li) => {
+    svg += `<text x="${rootCx}" y="${rootTextY + li * LINE_H}" text-anchor="middle" fill="#fff" font-size="${rootFontSize}" font-weight="700">${escHtml(line)}</text>`;
+  });
+  svg += `</svg>`;
+
+  const legend = `<div style="display:flex;gap:16px;align-items:center;padding:0 4px 8px;font-size:12px;color:#6b7280">
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block"></span> Complete</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block"></span> In Progress</span>
+    <span style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:50%;background:#6b7280;display:inline-block"></span> Queued</span>
+  </div>`;
+
+  return `<div class="mindmap-container" style="position:relative">${legend}<div class="chart-tooltip" style="display:none"></div>${svg}</div>`;
+}
+
+function initMindmapTooltips() {
+  const container = document.querySelector('.mindmap-container');
+  if (!container) return;
+  const tooltip = container.querySelector('.chart-tooltip');
+  if (!tooltip) return;
+  container.addEventListener('mousemove', (e) => {
+    const target = e.target.closest('.chart-hover');
+    if (!target) { tooltip.style.display = 'none'; return; }
+    const tip = target.getAttribute('data-tip');
+    const color = target.getAttribute('data-color') || '#1a1a2e';
+    if (!tip) { tooltip.style.display = 'none'; return; }
+    tooltip.innerHTML = `<div class="tip-label" style="color:${color}">${tip}</div>`;
+    tooltip.style.display = 'block';
+    const rect = container.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    let tx = mx - 20;
+    let ty = my - tooltip.offsetHeight - 12;
+    if (tx + tooltip.offsetWidth > rect.width) tx = rect.width - tooltip.offsetWidth - 4;
+    if (tx < 0) tx = 4;
+    if (ty < 0) ty = my + 16;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+  });
+  container.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+}
+
+function buildActivityFeed(cycles) {
+  if (!cycles || cycles.length === 0) return '';
+
+  const sorted = [...cycles].reverse();  // newest first for list view
+  _activityFeedCache = sorted;
+
+  const content = buildListView(sorted);
+
+  return `<div class="activity-feed">
+    <h3>
+      <span>Research Activity</span>
+      <span style="font-weight:400;font-size:12px;color:var(--text2)">${sorted.length} cycles</span>
+    </h3>
+    <div class="feed-list">${content}</div>
+  </div>`;
 }
 
 async function summarizeTopic() {
@@ -771,6 +1241,9 @@ async function summarizeTopic() {
 }
 
 
+// --- Activity Feed ---
+let _activityFeedCache = null;   // sorted cycles (newest first)
+
 // --- Spend Chart ---
 let _spendChartMode = 'time'; // 'time' or 'cycle'
 let _spendChartCache = null;  // {points, budgetLimit, issues}
@@ -783,7 +1256,7 @@ function buildSpendChart(points, budgetLimit, issues, mode) {
     return '<div class="spend-chart-container"><h3>Budget Usage Over Time</h3><div style="color:var(--text2);font-size:13px;padding:12px 0">No spend data yet. Run some cycles to see the chart.</div></div>';
   }
 
-  const W = 800, H = 320, PAD = { top: 25, right: 55, bottom: 35, left: 60 };
+  const W = 700, H = 240, PAD = { top: 20, right: 50, bottom: 30, left: 55 };
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
 
@@ -976,6 +1449,26 @@ function toggleSpendMode(mode) {
   }
 }
 
+function _rebuildActivityFeed() {
+  const sorted = _activityFeedCache;
+  const content = buildListView(sorted);
+
+  const newHtml = `<div class="activity-feed">
+    <h3>
+      <span>Research Activity</span>
+      <span style="font-weight:400;font-size:12px;color:var(--text2)">${sorted.length} cycles</span>
+    </h3>
+    <div class="feed-list">${content}</div>
+  </div>`;
+
+  const existing = document.querySelector('.activity-feed');
+  if (existing) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = newHtml;
+    existing.replaceWith(wrapper.firstElementChild);
+  }
+}
+
 function buildHealthPanel(health) {
   if (!health) return '';
   const issues = health.issues || [];
@@ -1053,10 +1546,15 @@ function initChartTooltips() {
 // --- Monitor ---
 async function renderMonitor() {
   const el = document.getElementById('content');
+  // Preserve scroll positions across refresh
+  const prevScrollTop = el.scrollTop;
+  const feedList = el.querySelector('.feed-list');
+  const prevFeedScroll = feedList ? feedList.scrollTop : 0;
+
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
   const [detail, cycles, spendData, health] = await Promise.all([
     api(`topics/${state.selected}`),
-    api(`topics/${state.selected}/cycles?n=20`),
+    api(`topics/${state.selected}/cycles?n=50`),
     api(`topics/${state.selected}/spend-history`).catch(() => ({points: []})),
     api(`topics/${state.selected}/health`).catch(() => ({issues: [], has_issues: false}))
   ]);
@@ -1110,24 +1608,38 @@ async function renderMonitor() {
       <div style="font-size:13px;color:var(--text2);margin-bottom:8px">${detail.identity.purpose || ''}</div>
       <div>${(detail.identity.traits || []).map(t => `<span class="trait">${t}</span>`).join('')}</div>
     </div>
-    <div class="cycles-list">
-      <h3>Recent Cycles</h3>
-      ${cycles.length === 0 ? '<div style="padding:12px 16px;color:var(--text2)">No cycles yet</div>' :
-        cycles.reverse().map(c => `
-          <div class="cycle-row">
-            <span class="num">Cycle ${c.cycle || '?'}</span>
-            <span class="action">${c.action || 'unknown'}</span>
-            <span class="summary">${(c.summary || '').slice(0, 80)}</span>
-            <span class="cost">$${(c.cost_after || 0).toFixed(4)}</span>
-          </div>
-        `).join('')}
-    </div>
+    ${buildActivityFeed(cycles)}
   `;
+
+  // Restore scroll positions
+  el.scrollTop = prevScrollTop;
+  const newFeedList = el.querySelector('.feed-list');
+  if (newFeedList) newFeedList.scrollTop = prevFeedScroll;
 
   initChartTooltips();
 }
 
 // --- Research ---
+let _insightsSubTab = 'summary';
+
+function switchInsightsSubTab(tab) {
+  _insightsSubTab = tab;
+  renderInsights();
+}
+
+let _configSubTab = 'agent';
+const _openConfigSections = new Set();
+
+function toggleConfigSection(id) {
+  const body = document.getElementById('cfg-body-' + id);
+  const arrow = document.getElementById('cfg-arrow-' + id);
+  if (!body) return;
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open');
+  if (arrow) arrow.classList.toggle('open');
+  if (isOpen) _openConfigSections.delete(id);
+  else _openConfigSections.add(id);
+}
 let _bucketsCache = null;
 
 async function renderResearch() {
@@ -1161,6 +1673,28 @@ async function renderResearch() {
   }
 
   let html = '';
+
+  // Fetch Notion config + status for Push All header
+  const [notionCfgR, notionStatusR] = await Promise.all([
+    fetch('/api/notion/config').then(r => r.json()).catch(() => ({ token_set: false, root_page_id: '' })),
+    fetch(`/api/topics/${encodeURIComponent(state.selected)}/notion-status`).then(r => r.json()).catch(() => ({ published: false }))
+  ]);
+  const notionReady = notionCfgR.token_set && notionCfgR.root_page_id;
+  let statusHtml = '';
+  if (notionStatusR.published && notionStatusR.published_at) {
+    const linkHtml = notionStatusR.database_url
+      ? ` &mdash; <a href="${notionStatusR.database_url}" target="_blank">Open Hub Database</a>`
+      : '';
+    statusHtml = `<span class="notion-status">Last published ${formatTimestamp(notionStatusR.published_at)}${linkHtml}</span>`;
+  } else if (!notionReady) {
+    statusHtml = '<span class="notion-status">Configure Notion in the Configure tab to enable</span>';
+  }
+  html += `
+    <div class="research-header">
+      <button class="push-all-btn" id="push-all-notion-btn" onclick="publishAllToNotion(this)" ${notionReady ? '' : 'disabled'} title="${notionReady ? 'Publish all research to Notion hub database' : 'Configure Notion token & root page ID first'}">Push All to Notion</button>
+      ${statusHtml}
+    </div>
+  `;
 
   if (data.has_buckets && data.buckets.length > 0) {
     html += '<div id="bucket-list">';
@@ -1306,6 +1840,33 @@ async function publishBucket(index) {
   }
 }
 
+async function publishAllToNotion(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Publishing...';
+  try {
+    const result = await api(`topics/${state.selected}/publish-to-notion`, { method: 'POST' });
+    btn.textContent = 'Push All to Notion';
+    btn.disabled = false;
+    // Update status next to button
+    const header = btn.closest('.research-header');
+    if (header) {
+      let statusEl = header.querySelector('.notion-status');
+      if (!statusEl) { statusEl = document.createElement('span'); statusEl.className = 'notion-status'; header.appendChild(statusEl); }
+      const dbLink = result.database_url ? ` &mdash; <a href="${result.database_url}" target="_blank">Open Hub Database</a>` : '';
+      statusEl.innerHTML = `Published ${formatTimestamp(result.published_at)}${dbLink}`;
+    }
+  } catch (e) {
+    btn.textContent = 'Push All to Notion';
+    btn.disabled = false;
+    const header = btn.closest('.research-header');
+    if (header) {
+      let statusEl = header.querySelector('.notion-status');
+      if (!statusEl) { statusEl = document.createElement('span'); statusEl.className = 'notion-status'; header.appendChild(statusEl); }
+      statusEl.innerHTML = `<span style="color:var(--red)">Failed: ${escHtml(e.message)}</span>`;
+    }
+  }
+}
+
 async function viewFile(name) {
   const area = document.getElementById('file-viewer-area');
   area.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
@@ -1320,46 +1881,24 @@ async function viewFile(name) {
 
 // --- Mission ---
 // --- Configure ---
+function switchConfigSubTab(tab) {
+  _configSubTab = tab;
+  renderConfigure();
+}
+
 async function renderConfigure() {
   const el = document.getElementById('content');
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
-  const llmCfg = await fetch('/api/llm/config').then(r => r.json()).catch(() => ({ provider: '', api_key_set: false, api_key_masked: '' }));
-  const redditCfg = await fetch('/api/reddit/config').then(r => r.json()).catch(() => ({ client_id: '', configured: false, client_secret_masked: '' }));
-  const newsapiCfg = await fetch('/api/newsapi/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' }));
-  const notionCfg = await fetch('/api/notion/config').then(r => r.json()).catch(() => ({ token_set: false, root_page_id: '', hub_database_id: '' }));
 
-  // Get current per-agent budget (only if a topic is selected)
-  let budgetHtml = '';
-  if (state.selected) {
-    const topicData = state.topics.find(t => t.name === state.selected);
-    const agentBudget = topicData && topicData.budget;
-    const globalBudget = state.config.budget || {};
-    const curTotal = (agentBudget && agentBudget.max_total_usd) || globalBudget.max_total_usd || 10;
-    const curDaily = (agentBudget && agentBudget.max_per_day_usd) || globalBudget.max_per_day_usd || 10;
-    budgetHtml = `
-    <div class="config-section">
-      <h3>Agent Budget — ${escHtml(state.selected)}</h3>
-      <div class="budget-form">
-        <div class="budget-field">
-          <label>Total budget ($)</label>
-          <input type="number" id="budget-total" step="0.50" min="0" value="${curTotal}" />
-        </div>
-        <div class="budget-field">
-          <label>Daily limit ($)</label>
-          <input type="number" id="budget-daily" step="0.50" min="0" value="${curDaily}" />
-        </div>
-        <button class="save-btn" onclick="saveBudget(this)">Save Budget</button>
-      </div>
-    </div>`;
-  }
+  // Fetch all configs in parallel
+  const [llmCfg, redditCfg, newsapiCfg, notionCfg] = await Promise.all([
+    fetch('/api/llm/config').then(r => r.json()).catch(() => ({ provider: '', api_key_set: false, api_key_masked: '' })),
+    fetch('/api/reddit/config').then(r => r.json()).catch(() => ({ client_id: '', configured: false, client_secret_masked: '' })),
+    fetch('/api/newsapi/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' })),
+    fetch('/api/notion/config').then(r => r.json()).catch(() => ({ token_set: false, root_page_id: '', hub_database_id: '', token_masked: '' }))
+  ]);
 
-  const notionConnected = notionCfg.token_set && notionCfg.root_page_id;
-  const statusDot = notionConnected
-    ? '<span class="status-dot" style="background:var(--green)"></span>Connected'
-    : '<span class="status-dot" style="background:var(--red)"></span>Not configured';
-  const hubLink = notionCfg.hub_database_id
-    ? `<a href="https://notion.so/${notionCfg.hub_database_id.replace(/-/g, '')}" target="_blank" style="color:var(--accent);font-size:12px;margin-left:12px">Open Hub Database</a>`
-    : '';
+  const tab = _configSubTab;
 
   const llmProviders = ['gemini', 'vertex', 'anthropic', 'openrouter', 'openai'];
   const providerLabels = { gemini: 'Gemini API Key (Google AI Studio)', vertex: 'Vertex AI (Google Cloud)', anthropic: 'Anthropic', openrouter: 'OpenRouter', openai: 'OpenAI' };
@@ -1501,34 +2040,195 @@ async function renderConfigure() {
       </div>
       <button class="save-btn" id="llm-config-btn" onclick="saveLlmConfig(this)">Save LLM Config</button>
     </div>
-    <div class="config-section">
-      <h3>Reddit API <span style="font-size:11px;font-weight:400;color:${redditCfg.configured ? '#22c55e' : 'var(--text2)'};margin-left:8px">${redditCfg.configured ? '&#x2713; Configured' : 'Not configured'}</span></h3>
-      <div style="margin-bottom:8px">
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Client ID</label>
-        <input type="text" id="reddit-client-id" placeholder="Enter Reddit client ID..." value="${escHtml(redditCfg.client_id || '')}" />
-      </div>
-      <div style="margin-bottom:8px">
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Client Secret</label>
-        <input type="password" id="reddit-client-secret" placeholder="${redditCfg.client_secret_masked || 'Enter Reddit client secret...'}" />
-      </div>
-      <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
-        Create a Reddit app at <a href="https://www.reddit.com/prefs/apps" target="_blank" style="color:var(--accent)">reddit.com/prefs/apps</a> (select "script" type)
-      </div>
-      <button class="save-btn" id="reddit-config-btn" onclick="saveRedditConfig(this)">Save Reddit Config</button>
-    </div>
-    <div class="config-section">
-      <h3>NewsAPI <span style="font-size:11px;font-weight:400;color:${newsapiCfg.configured ? '#22c55e' : 'var(--text2)'};margin-left:8px">${newsapiCfg.configured ? '&#x2713; Configured' : 'Not configured'}</span></h3>
-      <div style="margin-bottom:8px">
-        <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Key</label>
-        <input type="password" id="newsapi-key" placeholder="${newsapiCfg.api_key_masked || 'Enter NewsAPI key...'}" />
-      </div>
-      <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
-        Get a free API key at <a href="https://newsapi.org/register" target="_blank" style="color:var(--accent)">newsapi.org/register</a> (100 requests/day)
-      </div>
-      <button class="save-btn" id="newsapi-config-btn" onclick="saveNewsapiConfig(this)">Save NewsAPI Config</button>
-    </div>
-    ${agentConfigHtml}
   `;
+
+  // --- Agent sub-tab ---
+  if (tab === 'agent') {
+    if (!state.selected) {
+      html += '<div style="color:var(--text2);padding:20px;text-align:center">Select an agent from the sidebar to configure budget, mission, and parameters.</div>';
+    } else {
+      const topicData = state.topics.find(t => t.name === state.selected);
+      const agentBudget = topicData && topicData.budget;
+      const globalBudget = state.config.budget || {};
+      const curTotal = (agentBudget && agentBudget.max_total_usd) || globalBudget.max_total_usd || 10;
+      const curDaily = (agentBudget && agentBudget.max_per_day_usd) || globalBudget.max_per_day_usd || 10;
+
+      html += `
+      <div class="config-section">
+        <div class="config-section-header" onclick="toggleConfigSection('budget')">
+          <h3><span class="arrow ${_openConfigSections.has('budget') ? 'open' : ''}" id="cfg-arrow-budget">&#9654;</span> Budget — ${escHtml(state.selected)}</h3>
+          <span class="config-section-meta"><span class="status-dot" style="background:var(--green)"></span>$${curTotal} total / $${curDaily} daily</span>
+        </div>
+        <div class="config-section-body ${_openConfigSections.has('budget') ? 'open' : ''}" id="cfg-body-budget">
+          <div class="budget-form">
+            <div class="budget-field">
+              <label>Total budget ($)</label>
+              <input type="number" id="budget-total" step="0.50" min="0" value="${curTotal}" />
+            </div>
+            <div class="budget-field">
+              <label>Daily limit ($)</label>
+              <input type="number" id="budget-daily" step="0.50" min="0" value="${curDaily}" />
+            </div>
+            <button class="save-btn" onclick="saveBudget(this)">Save Budget</button>
+          </div>
+        </div>
+      </div>`;
+
+      const [mission, prompt] = await Promise.all([
+        api(`topics/${state.selected}/mission`),
+        api(`topics/${state.selected}/prompt`)
+      ]);
+      html += `
+      <div class="config-section">
+        <div class="config-section-header" onclick="toggleConfigSection('mission')">
+          <h3><span class="arrow ${_openConfigSections.has('mission') ? 'open' : ''}" id="cfg-arrow-mission">&#9654;</span> Research Objective</h3>
+          <span class="config-section-meta"><span class="status-dot" style="background:${mission.content.trim() ? 'var(--green)' : 'var(--red)'}"></span>${mission.content.trim() ? 'Set' : 'Not set'}</span>
+        </div>
+        <div class="config-section-body ${_openConfigSections.has('mission') ? 'open' : ''}" id="cfg-body-mission">
+          <textarea id="mission-editor">${escHtml(mission.content)}</textarea>
+          <button class="save-btn" onclick="saveMission(this)">Save Research Objective</button>
+        </div>
+      </div>
+      <div class="config-section">
+        <div class="config-section-header" onclick="toggleConfigSection('params')">
+          <h3><span class="arrow ${_openConfigSections.has('params') ? 'open' : ''}" id="cfg-arrow-params">&#9654;</span> Agent Parameters</h3>
+          <span class="config-section-meta"><span class="status-dot" style="background:${prompt.content.trim() ? 'var(--green)' : 'var(--red)'}"></span>${prompt.content.trim() ? 'Set' : 'Not set'}</span>
+        </div>
+        <div class="config-section-body ${_openConfigSections.has('params') ? 'open' : ''}" id="cfg-body-params">
+          <textarea id="prompt-editor">${escHtml(prompt.content)}</textarea>
+          <button class="save-btn" onclick="savePrompt(this)">Save Parameters</button>
+        </div>
+      </div>`;
+    }
+  }
+
+  // --- API Keys sub-tab ---
+  if (tab === 'apikeys') {
+    const llmProviders = ['gemini', 'vertex', 'anthropic', 'openrouter', 'openai'];
+    const providerLabels = { gemini: 'Gemini API Key (Google AI Studio)', vertex: 'Vertex AI (Google Cloud)', anthropic: 'Anthropic', openrouter: 'OpenRouter', openai: 'OpenAI' };
+    const curProvider = (llmCfg.provider || '').toLowerCase();
+    const providerOptions = llmProviders.map(p =>
+      `<option value="${p}" ${p === curProvider ? 'selected' : ''}>${providerLabels[p] || p}</option>`
+    ).join('');
+    const isVertex = curProvider === 'vertex';
+    const isGemini = curProvider === 'gemini';
+    const showApiKey = !isVertex;
+    const llmMeta = llmCfg.api_key_set ? (providerLabels[curProvider] || curProvider || 'Set') : 'Not configured';
+
+    html += `
+    <div class="config-section">
+      <div class="config-section-header" onclick="toggleConfigSection('llm')">
+        <h3><span class="arrow ${_openConfigSections.has('llm') ? 'open' : ''}" id="cfg-arrow-llm">&#9654;</span> LLM Configuration</h3>
+        <span class="config-section-meta"><span class="status-dot" style="background:${llmCfg.api_key_set ? 'var(--green)' : 'var(--red)'}"></span>${escHtml(llmMeta)}</span>
+      </div>
+      <div class="config-section-body ${_openConfigSections.has('llm') ? 'open' : ''}" id="cfg-body-llm">
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Provider</label>
+          <select id="llm-provider" onchange="toggleLlmFields()" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:13px;padding:8px 12px;box-shadow:var(--shadow-sm);">
+            <option value="">Select provider...</option>
+            ${providerOptions}
+          </select>
+        </div>
+        <div id="llm-vertex-fields" style="display:${isVertex ? 'block' : 'none'}">
+          <div class="setup-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+            <span class="setup-chevron">&#9654;</span> Setup Instructions
+          </div>
+          <div class="setup-instructions">
+            <div class="step"><div class="step-num">1</div><div class="step-body"><div class="step-title">Install Google Cloud CLI</div><code>brew install google-cloud-sdk</code></div></div>
+            <div class="step"><div class="step-num">2</div><div class="step-body"><div class="step-title">Authenticate</div><code>gcloud auth login</code><br><code>gcloud auth application-default login</code><br><span style="font-size:11px;color:var(--text2)">The second command creates credentials that Vertex AI uses for auth.</span></div></div>
+            <div class="step"><div class="step-num">3</div><div class="step-body"><div class="step-title">Set your project</div><code>gcloud config set project YOUR_PROJECT_ID</code></div></div>
+            <div class="step"><div class="step-num">4</div><div class="step-body"><div class="step-title">Install Python dependency</div><code>pip install google-auth</code> <span style="font-size:11px;color:var(--text2)">(included in <code>pip install -e .</code>)</span></div></div>
+          </div>
+          <div style="margin-bottom:8px">
+            <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">GCP Project ID</label>
+            <input type="text" id="vertex-project" value="${escHtml(llmCfg.vertex_project || '')}" placeholder="my-project-id" />
+          </div>
+          <div style="margin-bottom:8px">
+            <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Location</label>
+            <input type="text" id="vertex-location" value="${escHtml(llmCfg.vertex_location || 'us-central1')}" placeholder="us-central1" />
+          </div>
+        </div>
+        <div id="llm-apikey-field" style="display:${showApiKey ? 'block' : 'none'};margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Key</label>
+          <input type="password" id="llm-api-key" placeholder="${llmCfg.api_key_masked || 'Enter API key...'}" />
+          <div id="gemini-hint" style="display:${isGemini ? 'block' : 'none'};font-size:11px;color:var(--text2);margin-top:4px">Get a key from <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">Google AI Studio</a></div>
+        </div>
+        <button class="save-btn" id="llm-config-btn" onclick="saveLlmConfig(this)">Save LLM Config</button>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-header" onclick="toggleConfigSection('reddit')">
+        <h3><span class="arrow ${_openConfigSections.has('reddit') ? 'open' : ''}" id="cfg-arrow-reddit">&#9654;</span> Reddit API</h3>
+        <span class="config-section-meta"><span class="status-dot" style="background:${redditCfg.configured ? 'var(--green)' : 'var(--red)'}"></span>${redditCfg.configured ? 'Configured' : 'Not configured'}</span>
+      </div>
+      <div class="config-section-body ${_openConfigSections.has('reddit') ? 'open' : ''}" id="cfg-body-reddit">
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Client ID</label>
+          <input type="text" id="reddit-client-id" placeholder="Enter Reddit client ID..." value="${escHtml(redditCfg.client_id || '')}" />
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Client Secret</label>
+          <input type="password" id="reddit-client-secret" placeholder="${redditCfg.client_secret_masked || 'Enter Reddit client secret...'}" />
+        </div>
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
+          Create a Reddit app at <a href="https://www.reddit.com/prefs/apps" target="_blank" style="color:var(--accent)">reddit.com/prefs/apps</a> (select "script" type)
+        </div>
+        <button class="save-btn" id="reddit-config-btn" onclick="saveRedditConfig(this)">Save Reddit Config</button>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-header" onclick="toggleConfigSection('newsapi')">
+        <h3><span class="arrow ${_openConfigSections.has('newsapi') ? 'open' : ''}" id="cfg-arrow-newsapi">&#9654;</span> NewsAPI</h3>
+        <span class="config-section-meta"><span class="status-dot" style="background:${newsapiCfg.configured ? 'var(--green)' : 'var(--red)'}"></span>${newsapiCfg.configured ? 'Configured' : 'Not configured'}</span>
+      </div>
+      <div class="config-section-body ${_openConfigSections.has('newsapi') ? 'open' : ''}" id="cfg-body-newsapi">
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Key</label>
+          <input type="password" id="newsapi-key" placeholder="${newsapiCfg.api_key_masked || 'Enter NewsAPI key...'}" />
+        </div>
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
+          Get a free API key at <a href="https://newsapi.org/register" target="_blank" style="color:var(--accent)">newsapi.org/register</a> (100 requests/day)
+        </div>
+        <button class="save-btn" id="newsapi-config-btn" onclick="saveNewsapiConfig(this)">Save NewsAPI Config</button>
+      </div>
+    </div>`;
+  }
+
+  // --- Notion sub-tab ---
+  if (tab === 'notion') {
+    const notionConnected = notionCfg.token_set && notionCfg.root_page_id;
+    const statusDot = notionConnected
+      ? '<span class="status-dot" style="background:var(--green)"></span>Connected'
+      : '<span class="status-dot" style="background:var(--red)"></span>Not configured';
+    const hubLink = notionCfg.hub_database_id
+      ? `<div style="margin-top:12px"><a href="https://notion.so/${notionCfg.hub_database_id.replace(/-/g, '')}" target="_blank" style="color:var(--accent);font-size:12px;font-weight:500">Open Hub Database</a></div>`
+      : '';
+
+    html += `
+    <div class="config-section">
+      <div class="config-section-header" onclick="toggleConfigSection('notion')">
+        <h3><span class="arrow ${_openConfigSections.has('notion') ? 'open' : ''}" id="cfg-arrow-notion">&#9654;</span> Notion Integration</h3>
+        <span class="config-section-meta">${statusDot}</span>
+      </div>
+      <div class="config-section-body ${_openConfigSections.has('notion') ? 'open' : ''}" id="cfg-body-notion">
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Integration Token</label>
+          <input type="password" id="notion-token" placeholder="${notionCfg.token_masked || 'Enter Notion integration token...'}" />
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Root Page ID</label>
+          <input type="text" id="notion-root-page" value="${escHtml(notionCfg.root_page_id || '')}" placeholder="Paste Notion page ID or URL..." />
+        </div>
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
+          Create an integration at <a href="https://www.notion.so/my-integrations" target="_blank" style="color:var(--accent)">notion.so/my-integrations</a>, then share your root page with it.
+        </div>
+        <button class="save-btn" onclick="saveNotionConfig(this)">Save Notion Config</button>
+        ${hubLink}
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML = html;
 }
 
 async function saveNotionConfig(btn) {

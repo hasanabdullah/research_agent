@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -153,6 +154,80 @@ def _load_buckets(name: str) -> list[dict]:
         cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
         return cfg.get("research_buckets", [])
     return []
+
+
+def _compute_phase_statuses(name: str) -> list[dict]:
+    """Compute completion status for each research bucket/phase.
+
+    Mirrors agent.py:_get_current_phase_idx logic.
+    Returns list of {index, name, status} where status is
+    'complete', 'current', 'queued', or 'empty'.
+    """
+    buckets = _load_buckets(name)
+    if not buckets:
+        return []
+
+    paths = _paths_for(name)
+    research_dir = paths["research_dir"]
+    found_current = False
+    results = []
+
+    for i, bucket in enumerate(buckets):
+        files = bucket.get("files", [])
+        min_complete_bytes = bucket.get("min_complete_bytes", 2048)
+        completion_marker = bucket.get("completion_marker", "")
+        min_marker_count = bucket.get("min_marker_count", 0)
+
+        max_size = 0
+        primary_content = ""
+        any_file_exists = False
+        for fn in files:
+            fpath = research_dir / fn
+            if fpath.exists():
+                size = fpath.stat().st_size
+                any_file_exists = True
+                if size > max_size:
+                    max_size = size
+                if fn.endswith(".md") and size > 0:
+                    try:
+                        primary_content = fpath.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
+
+        bytes_ok = max_size >= min_complete_bytes
+        markers_ok = True
+        if completion_marker and min_marker_count > 0:
+            markers_ok = primary_content.count(completion_marker) >= min_marker_count
+
+        if bytes_ok and markers_ok:
+            status = "complete"
+        elif not found_current and any_file_exists and max_size > 0:
+            status = "current"
+            found_current = True
+        elif not found_current and not any_file_exists:
+            # First phase with no files yet — it's current if all prior are complete
+            status = "current" if all(
+                r["status"] == "complete" for r in results
+            ) else "queued"
+            if status == "current":
+                found_current = True
+        else:
+            status = "empty" if not any_file_exists else "queued"
+
+        results.append({
+            "index": i,
+            "name": bucket.get("name", f"Phase {i+1}"),
+            "status": status,
+        })
+
+    # If no current was found but not all complete, mark first non-complete as current
+    if not found_current:
+        for r in results:
+            if r["status"] in ("queued", "empty"):
+                r["status"] = "current"
+                break
+
+    return results
 
 
 def _save_buckets(name: str, buckets: list[dict]):
@@ -540,6 +615,10 @@ def api_get_buckets(name: str):
             "other_files": list(all_files.values()),
         }
 
+    # Compute phase statuses
+    phase_statuses = _compute_phase_statuses(name)
+    status_map = {ps["index"]: ps["status"] for ps in phase_statuses}
+
     # Load publish state for status info
     publish_state_path = paths["data_dir"] / "notion_publish.json"
     publish_state = {}
@@ -571,6 +650,7 @@ def api_get_buckets(name: str):
             "total_size": total_size,
             "notion_page_id": b.get("notion_page_id", ""),
             "published_at": published_at,
+            "status": status_map.get(i, "empty"),
         })
 
     other_files = [all_files[fn] for fn in sorted(all_files.keys()) if fn not in bucketed_names]
@@ -1308,6 +1388,69 @@ def api_rename_topic(name: str, body: TopicRename):
 
 # --- Summarize ---
 
+_OUTLINE_SYSTEM_PROMPT = (
+    "You are a research analyst. Given a research summary, produce a structured JSON outline "
+    "organized by THEME (not by file or phase). Return ONLY valid JSON with this schema:\n"
+    '{"label":"Research Topic","children":[{"label":"Theme Name","status":"complete|current|queued",'
+    '"children":[{"label":"Key Finding","detail":"Supporting detail"}]}]}\n'
+    "Rules:\n"
+    "- Organize by semantic themes, not by source structure\n"
+    "- Use status: 'complete' for well-established findings, 'current' for active areas, "
+    "'queued' for identified gaps or open questions\n"
+    "- Keep labels concise (under 80 chars)\n"
+    "- Include 2-6 top-level themes\n"
+    "- Each theme should have 1-5 key findings with supporting details\n"
+    "- Return ONLY the JSON object, no markdown fences or extra text"
+)
+
+
+def _extract_json(raw: str):
+    """Extract a JSON object from LLM output, handling markdown fences and preamble."""
+    raw = raw.strip()
+    # Strip markdown fences (```json ... ``` or ``` ... ```)
+    if "```" in raw:
+        # Find content between first ``` and last ```
+        parts = raw.split("```")
+        # parts[0] = before first fence, parts[1] = inside fence, ...
+        if len(parts) >= 3:
+            inner = parts[1]
+            # Remove optional language tag on first line (e.g. "json\n")
+            if inner.startswith("json"):
+                inner = inner[4:]
+            raw = inner.strip()
+        elif len(parts) == 2:
+            inner = parts[1]
+            if inner.startswith("json"):
+                inner = inner[4:]
+            raw = inner.strip()
+    # Fallback: find first { and last }
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        raw = raw[start:end + 1]
+    return json.loads(raw)
+
+
+def _generate_outline(client, model, summary_text):
+    """Generate a structured outline JSON from summary text. Returns (dict, usage) or (None, None)."""
+    try:
+        response = completions_with_retry(
+            client,
+            model=resolve_model(model),
+            max_tokens=4096,
+            messages=[
+                {"role": "system", "content": _OUTLINE_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Create a structured research outline from this summary:\n\n{summary_text}"},
+            ],
+        )
+        raw = response.choices[0].message.content
+        outline = _extract_json(raw)
+        usage = getattr(response, "usage", None)
+        return outline, usage
+    except Exception:
+        return None, None
+
+
 @app.post("/api/topics/{name}/summarize")
 def api_summarize(name: str):
     """Summarize all research files for a topic using the LLM."""
@@ -1358,25 +1501,236 @@ def api_summarize(name: str):
     summary = response.choices[0].message.content
     generated_at = datetime.now(timezone.utc).isoformat()
 
+    # Generate structured outline
+    outline, outline_usage = _generate_outline(client, model, summary)
+
+    # Record outline cost if available
+    if outline_usage:
+        from costs import record_call
+        pricing = config.get("pricing", {"input_per_mtok": 1.0, "output_per_mtok": 5.0})
+        record_call(
+            getattr(outline_usage, "prompt_tokens", 0) or 0,
+            getattr(outline_usage, "completion_tokens", 0) or 0,
+            pricing, label="research_outline", costs_file=paths["costs_file"],
+        )
+
     # Save as JSON with timestamp
     summary_path = paths["base"] / "data" / "summary.json"
-    summary_path.write_text(json.dumps({
+    save_data = {
         "summary": summary,
         "generated_at": generated_at,
-    }, indent=2), encoding="utf-8")
+        "outline": outline,
+    }
+    summary_path.write_text(json.dumps(save_data, indent=2), encoding="utf-8")
 
-    return {"summary": summary, "generated_at": generated_at}
+    return save_data
+
+
+@app.post("/api/topics/{name}/summarize-phases")
+def api_summarize_phases(name: str):
+    """Summarize research by phase: one LLM call per bucket + a global executive summary."""
+    paths = _paths_for(name)
+    research_dir = paths["research_dir"]
+    buckets = _load_buckets(name)
+
+    # Fall back to flat summarize if no buckets
+    if not buckets:
+        return api_summarize(name)
+
+    if not research_dir.exists():
+        raise HTTPException(404, "No research directory found")
+
+    config = load_config()
+    model = config.get("scaffold_model", "anthropic/claude-sonnet-4.6")
+
+    # Collect content per bucket
+    bucket_contents = []
+    bucketed_file_names = set()
+    for i, b in enumerate(buckets):
+        parts = []
+        for fn in b.get("files", []):
+            fpath = research_dir / fn
+            bucketed_file_names.add(fn)
+            if fpath.exists():
+                content = fpath.read_text(encoding="utf-8").strip()
+                if content:
+                    parts.append(f"### {fn}\n\n{content}")
+        bucket_contents.append({
+            "index": i,
+            "name": b.get("name", f"Phase {i+1}"),
+            "content": "\n\n---\n\n".join(parts) if parts else "",
+        })
+
+    # Collect unbucketed files for additional context
+    unbucketed_parts = []
+    if research_dir.exists():
+        for f in _research_files(research_dir):
+            if f.name not in bucketed_file_names:
+                content = f.read_text(encoding="utf-8").strip()
+                if content:
+                    unbucketed_parts.append(f"### {f.name}\n\n{content}")
+
+    # Parallel LLM calls for each phase with content
+    # Accumulate usage from threads, record costs after (record_call is not thread-safe)
+    usage_accumulator = []
+
+    def summarize_phase(bc):
+        if not bc["content"]:
+            return {
+                "bucket_index": bc["index"],
+                "bucket_name": bc["name"],
+                "summary": None,
+                "generated_at": None,
+            }
+        client = get_client()
+        response = completions_with_retry(
+            client,
+            model=resolve_model(model),
+            max_tokens=2048,
+            messages=[
+                {"role": "system", "content": (
+                    "You are a research analyst. Summarize this research phase concisely in markdown. "
+                    "Produce:\n"
+                    "- A 1-2 sentence overview of what this phase covers\n"
+                    "- 3-5 key findings as bullet points\n"
+                    "- A confidence level (High / Medium / Low) with brief justification\n"
+                    "Be direct and reference specific data points from the research."
+                )},
+                {"role": "user", "content": (
+                    f"Research phase: {bc['name']}\n\n{bc['content']}"
+                )},
+            ],
+        )
+        usage = getattr(response, "usage", None)
+        if usage:
+            usage_accumulator.append({
+                "input": getattr(usage, "prompt_tokens", 0) or 0,
+                "output": getattr(usage, "completion_tokens", 0) or 0,
+                "label": "phase_summary",
+            })
+        summary_text = None
+        if response.choices and response.choices[0].message:
+            summary_text = response.choices[0].message.content
+        return {
+            "bucket_index": bc["index"],
+            "bucket_name": bc["name"],
+            "summary": summary_text,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    phase_summaries = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(summarize_phase, bc): bc["index"]
+            for bc in bucket_contents
+        }
+        for future in as_completed(futures):
+            phase_summaries.append(future.result())
+
+    # Sort by bucket index
+    phase_summaries.sort(key=lambda ps: ps["bucket_index"])
+
+    # Build input for global executive summary
+    global_parts = []
+    for ps in phase_summaries:
+        if ps["summary"]:
+            global_parts.append(f"## {ps['bucket_name']}\n\n{ps['summary']}")
+    if unbucketed_parts:
+        global_parts.append("## Additional Research\n\n" + "\n\n---\n\n".join(unbucketed_parts))
+
+    # Generate global executive summary
+    global_summary = ""
+    generated_at = datetime.now(timezone.utc).isoformat()
+    if global_parts:
+        client = get_client()
+        response = completions_with_retry(
+            client,
+            model=resolve_model(model),
+            max_tokens=4096,
+            messages=[
+                {"role": "system", "content": (
+                    "You are a research analyst. You will be given phase-by-phase summaries from an AI research agent. "
+                    "Produce a concise executive summary in markdown with:\n"
+                    "- A 2-3 sentence TL;DR at the top\n"
+                    "- Key findings across all phases (bulleted)\n"
+                    "- Top recommendations (numbered)\n"
+                    "- Open questions or gaps\n"
+                    "Be direct, specific, and synthesize insights across phases."
+                )},
+                {"role": "user", "content": (
+                    "Synthesize the following phase summaries into an executive summary:\n\n"
+                    + "\n\n---\n\n".join(global_parts)
+                )},
+            ],
+        )
+        usage = getattr(response, "usage", None)
+        if usage:
+            usage_accumulator.append({
+                "input": getattr(usage, "prompt_tokens", 0) or 0,
+                "output": getattr(usage, "completion_tokens", 0) or 0,
+                "label": "executive_summary",
+            })
+        if response.choices and response.choices[0].message:
+            global_summary = response.choices[0].message.content or ""
+
+    # Generate structured outline from all phase summaries + executive summary
+    outline = None
+    if global_summary:
+        outline_input = global_summary + "\n\n---\n\n" + "\n\n".join(global_parts)
+        client = get_client()
+        outline, outline_usage = _generate_outline(client, model, outline_input)
+        if outline_usage:
+            usage_accumulator.append({
+                "input": getattr(outline_usage, "prompt_tokens", 0) or 0,
+                "output": getattr(outline_usage, "completion_tokens", 0) or 0,
+                "label": "research_outline",
+            })
+
+    # Record all accumulated costs sequentially (thread-safe)
+    if usage_accumulator:
+        from costs import record_call
+        pricing = config.get("pricing", {"input_per_mtok": 1.0, "output_per_mtok": 5.0})
+        for u in usage_accumulator:
+            record_call(
+                u["input"], u["output"], pricing,
+                label=u["label"], costs_file=paths["costs_file"],
+            )
+
+    # Save to summary.json
+    summary_path = paths["base"] / "data" / "summary.json"
+    save_data = {
+        "summary": global_summary,
+        "generated_at": generated_at,
+        "phase_summaries": [
+            {
+                "bucket_index": ps["bucket_index"],
+                "bucket_name": ps["bucket_name"],
+                "summary": ps["summary"],
+                "generated_at": ps["generated_at"],
+            }
+            for ps in phase_summaries
+        ],
+        "outline": outline,
+    }
+    summary_path.write_text(json.dumps(save_data, indent=2), encoding="utf-8")
+
+    return save_data
 
 
 @app.get("/api/topics/{name}/summary")
 def api_get_summary_file(name: str):
-    """Return the saved summary if it exists."""
+    """Return the saved summary if it exists, including phase_summaries if available."""
     paths = _paths_for(name)
     summary_path = paths["base"] / "data" / "summary.json"
     if not summary_path.exists():
-        return {"summary": None, "generated_at": None}
+        return {"summary": None, "generated_at": None, "phase_summaries": None, "outline": None}
     data = json.loads(summary_path.read_text(encoding="utf-8"))
-    return {"summary": data.get("summary"), "generated_at": data.get("generated_at")}
+    return {
+        "summary": data.get("summary"),
+        "generated_at": data.get("generated_at"),
+        "phase_summaries": data.get("phase_summaries"),
+        "outline": data.get("outline"),
+    }
 
 
 # --- Notion publishing ---

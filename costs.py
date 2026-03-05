@@ -25,8 +25,8 @@ def _save_ledger(ledger: dict, costs_file: Path = None):
 
 def record_call(input_tokens: int, output_tokens: int, pricing: dict, label: str = "", costs_file: Path = None) -> dict:
     """Record a single API call's cost. Returns the call record."""
-    input_cost = input_tokens * pricing["input_per_mtok"] / 1_000_000
-    output_cost = output_tokens * pricing["output_per_mtok"] / 1_000_000
+    input_cost = (input_tokens or 0) * pricing["input_per_mtok"] / 1_000_000
+    output_cost = (output_tokens or 0) * pricing["output_per_mtok"] / 1_000_000
     call_usd = input_cost + output_cost
 
     record = {
@@ -39,8 +39,8 @@ def record_call(input_tokens: int, output_tokens: int, pricing: dict, label: str
 
     ledger = _load_ledger(costs_file)
     ledger["calls"].append(record)
-    ledger["total_input_tokens"] += input_tokens
-    ledger["total_output_tokens"] += output_tokens
+    ledger["total_input_tokens"] += input_tokens or 0
+    ledger["total_output_tokens"] += output_tokens or 0
     ledger["total_usd"] = round(ledger["total_usd"] + call_usd, 6)
     _save_ledger(ledger, costs_file)
 

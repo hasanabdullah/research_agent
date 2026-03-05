@@ -568,9 +568,9 @@ def _extract_ideas(research_dir: Path) -> list[dict]:
     content = ideas_file.read_text(encoding="utf-8")
     lines = content.splitlines()
 
-    # Match headers like: ## IDEA #1: QuoteFlow AI — Commercial Insurance Quoting (8/8)
+    # Match headers like: ## IDEA #1: Title (8/8)  OR  ## IDEA 1/20: Title
     header_pattern = re.compile(
-        r'^## IDEA\s*#(\d+)\s*:\s*(.+?)(?:\s*\((\d+)/(\d+)\))?\s*$',
+        r'^## IDEA\s*#?(\d+)(?:/\d+)?\s*:\s*(.+?)(?:\s*\((\d+)/(\d+)\))?\s*$',
     )
     # Match metadata line: **Rank: #4 | Score: 8/8 | Industry: Accounting**
     meta_pattern = re.compile(
@@ -896,7 +896,7 @@ def run_cycle(config: dict) -> dict:
     summary = ""
     patch_file = None
 
-    for turn in range(10):  # max 10 tool-use turns per cycle
+    for turn in range(20):  # max 20 tool-use turns per cycle
         response = completions_with_retry(
             client,
             model=resolve_model(config.get("model", "anthropic/claude-opus-4.6")),
@@ -1965,6 +1965,46 @@ def run_topic(topic_name, cycles, delay):
                 click.echo(f">>> SOFT CAP: Phase {prev_phase_idx + 1} spent ${phase_spent:.2f} "
                            f"(cap ${cap:.2f}). Injecting move-on directive.")
 
+        # Pre-cycle: block if entering a phase past an unconfirmed selection checkpoint
+        cur_phase_idx = _get_current_phase_idx(config, paths, skip_phases=forced_complete_phases)
+        if cur_phase_idx is not None:
+            for bi in range(cur_phase_idx):
+                if buckets[bi].get("selection_checkpoint"):
+                    cp_file = paths["data_dir"] / "checkpoints.json"
+                    needs_checkpoint = True
+                    if cp_file.exists():
+                        try:
+                            cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
+                            sel_cp = cp_data.get("selection_checkpoint", {})
+                            if sel_cp.get("confirmed", False):
+                                needs_checkpoint = False
+                        except Exception:
+                            pass
+                    if needs_checkpoint:
+                        # Try to extract ideas and create the checkpoint now
+                        ideas = _extract_ideas(paths["research_dir"])
+                        if ideas:
+                            cp_file = paths["data_dir"] / "checkpoints.json"
+                            cp_data = {}
+                            if cp_file.exists():
+                                try:
+                                    cp_data = json.loads(cp_file.read_text(encoding="utf-8"))
+                                except Exception:
+                                    pass
+                            cp_data["selection_checkpoint"] = {
+                                "phase": buckets[bi]["name"],
+                                "ideas": ideas,
+                                "confirmed": False,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            }
+                            cp_file.write_text(json.dumps(cp_data, indent=2), encoding="utf-8")
+                        click.echo(f"\n{'='*60}")
+                        click.echo(f"BLOCKED: Selection checkpoint after '{buckets[bi]['name']}' not confirmed.")
+                        click.echo("  Use the dashboard to select which ideas to advance,")
+                        click.echo("  then restart the agent.")
+                        click.echo(f"{'='*60}\n")
+                        return
+
         try:
             result = run_cycle(config)
             consecutive_errors = 0  # reset on success
@@ -1985,7 +2025,6 @@ def run_topic(topic_name, cycles, delay):
                 break
             time.sleep(30)
             continue
-
         cycle_count += 1
         if result.get("action") in ("budget_stop", "quit"):
             break

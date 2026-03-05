@@ -67,6 +67,7 @@ TEMPLATES = [
                     "Who are indirect competitors or substitutes?",
                     "What are competitor pricing models?",
                     "Where are the gaps in current offerings?",
+                    "Use github_search to find open-source alternatives, abandoned repos (high stars + no recent commits = validated demand with no active competitor), and reusable libraries. Note star counts and activity status.",
                 ],
             },
             {
@@ -78,6 +79,7 @@ TEMPLATES = [
                     "What is the minimum viable product?",
                     "What technology stack is needed?",
                     "What are the key technical risks?",
+                    "Use github_search to find reusable libraries, SDKs, and open-source building blocks that could accelerate development.",
                 ],
             },
             {
@@ -283,6 +285,7 @@ TEMPLATES = [
                     "Are incumbents well-positioned to dominate?",
                     "What is the level of customer lock-in?",
                     "Where are the underserved niches?",
+                    "Use github_search to find open-source alternatives and abandoned repos (high stars + stale = validated demand, no active competitor). Note star counts and last commit dates.",
                 ],
             },
             {
@@ -336,6 +339,7 @@ TEMPLATES = [
                     "Who are indirect competitors solving the same problem differently?",
                     "Which large companies could enter this space?",
                     "What startups are emerging in this area?",
+                    "Use github_search to find open-source tools, abandoned repos (high stars + no recent commits = validated demand), and reusable libraries. Note star counts and activity status.",
                 ],
             },
             {
@@ -347,6 +351,7 @@ TEMPLATES = [
                     "Where does each product excel or fall short?",
                     "What is the user experience like?",
                     "What is the technology stack and architecture?",
+                    "Use github_search to check if competitors are open-source and compare repo activity, open issues, and community engagement.",
                 ],
             },
             {
@@ -455,6 +460,7 @@ TEMPLATES = [
                     "What is the open-source vs proprietary landscape?",
                     "How much funding is flowing into this space?",
                     "Who are the early adopters and what are their results?",
+                    "Use github_search to map the open-source ecosystem — find key repos, compare star counts, contributor activity, and identify which projects are gaining or losing momentum.",
                 ],
             },
             {

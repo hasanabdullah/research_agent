@@ -145,8 +145,8 @@ def test_tool_definitions_structure():
 
 
 def test_tool_definitions_count():
-    """Should have 11 base tool definitions."""
-    assert len(tools.TOOL_DEFINITIONS) == 11
+    """Should have 15 base tool definitions."""
+    assert len(tools.TOOL_DEFINITIONS) == 15
 
 
 def test_all_base_tools_present():
@@ -155,6 +155,7 @@ def test_all_base_tools_present():
         "read_file", "propose_edit", "append_to_file", "run_tests", "reflect",
         "web_search", "web_fetch", "youtube_transcript",
         "hackernews_search", "google_trends", "stackexchange_search",
+        "github_search", "patent_search", "wikipedia_search", "sec_filings",
     }
     actual = {t["function"]["name"] for t in tools.TOOL_DEFINITIONS}
     assert expected == actual
@@ -176,6 +177,10 @@ def test_get_active_tools_base():
     assert "hackernews_search" in active_names
     assert "google_trends" in active_names
     assert "stackexchange_search" in active_names
+    assert "github_search" in active_names
+    assert "patent_search" in active_names
+    assert "wikipedia_search" in active_names
+    assert "sec_filings" in active_names
 
 
 def test_get_active_tools_excludes_unconfigured():
@@ -184,7 +189,7 @@ def test_get_active_tools_excludes_unconfigured():
     active_names = {t["function"]["name"] for t in active}
     # These require credentials — should not be in base set
     # (unless env vars happen to be set, so we just check structure)
-    assert len(active) >= 11
+    assert len(active) >= 15
 
 
 # --- Rate limiting tests ---
@@ -212,6 +217,18 @@ def test_rate_limit_shared_counter():
 
     r5 = tools.handle_youtube_transcript("dQw4w9WgXcQ", ["test"])
     assert "RATE LIMIT" in r5 or "ERROR" in r5  # may fail on YT availability
+
+    r6 = tools.handle_github_search("test", ["test"])
+    assert "RATE LIMIT" in r6
+
+    r7 = tools.handle_patent_search("test", ["test"])
+    assert "RATE LIMIT" in r7
+
+    r8 = tools.handle_wikipedia_search("test", ["test"])
+    assert "RATE LIMIT" in r8
+
+    r9 = tools.handle_sec_filings("test", ["test"])
+    assert "RATE LIMIT" in r9
 
     tools.reset_web_counters()
 
@@ -425,3 +442,217 @@ def test_newsapi_tool_shown_with_credentials():
     assert "startup_news" in active_names
 
     tools._newsapi_configured = original_fn
+
+
+# --- Keyword validation tests for new tools ---
+
+
+def test_github_no_keywords():
+    """github_search should require keywords."""
+    result = tools.handle_github_search("test", [])
+    assert "ERROR" in result
+    assert "keywords" in result.lower()
+
+
+def test_patent_no_keywords():
+    """patent_search should require keywords."""
+    result = tools.handle_patent_search("test", [])
+    assert "ERROR" in result
+    assert "keywords" in result.lower()
+
+
+def test_wikipedia_no_keywords():
+    """wikipedia_search should require keywords."""
+    result = tools.handle_wikipedia_search("test", [])
+    assert "ERROR" in result
+    assert "keywords" in result.lower()
+
+
+def test_sec_filings_no_keywords_search_mode():
+    """sec_filings in search mode should require keywords."""
+    result = tools.handle_sec_filings("test", [])
+    assert "ERROR" in result
+    assert "keywords" in result.lower()
+
+
+def test_sec_filings_no_keywords_section_mode():
+    """sec_filings in section mode should not require keywords."""
+    tools.reset_web_counters()
+    # Without edgartools, it should give an install error, not a keywords error
+    original = tools._EDGAR_AVAILABLE
+    tools._EDGAR_AVAILABLE = False
+    result = tools.handle_sec_filings("AAPL", section="business")
+    assert "edgartools" in result.lower()
+    assert "keywords" not in result.lower()
+    tools._EDGAR_AVAILABLE = original
+
+
+# --- Handler integration tests for new tools (mocked network) ---
+
+
+def test_github_search_filters_by_keyword():
+    """github_search should filter results by keyword."""
+    tools.reset_web_counters()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {"X-RateLimit-Remaining": "55"}
+    mock_response.json.return_value = {
+        "items": [
+            {"full_name": "user/construction-manager", "description": "Construction project management tool", "stargazers_count": 120, "forks_count": 30, "language": "Python", "updated_at": "2025-01-15", "html_url": "https://github.com/user/construction-manager", "topics": ["construction", "management"]},
+            {"full_name": "user/recipe-app", "description": "A cooking recipe app", "stargazers_count": 5, "forks_count": 1, "language": "JavaScript", "updated_at": "2024-06-01", "html_url": "https://github.com/user/recipe-app", "topics": ["cooking"]},
+            {"full_name": "user/building-scheduler", "description": "Scheduling tool for construction sites", "stargazers_count": 45, "forks_count": 12, "language": "TypeScript", "updated_at": "2025-02-01", "html_url": "https://github.com/user/building-scheduler", "topics": ["scheduling"]},
+        ]
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("tools.requests.get", return_value=mock_response):
+        result = tools.handle_github_search("construction software", ["construction", "scheduling"])
+
+    assert "construction-manager" in result
+    assert "building-scheduler" in result
+    assert "recipe" not in result.lower()
+
+
+def test_patent_search_filters_by_keyword():
+    """patent_search should filter results by keyword."""
+    tools.reset_web_counters()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "patents": [
+            {"patent_title": "AI-based construction scheduling system", "patent_number": "11234567", "patent_date": "2024-05-01", "patent_abstract": "A method for optimizing construction schedules using AI", "assignees": [{"assignee_organization": "BuildTech Inc"}]},
+            {"patent_title": "Improved cookie baking method", "patent_number": "11234568", "patent_date": "2024-04-01", "patent_abstract": "A method for baking cookies", "assignees": [{"assignee_organization": "Cookie Corp"}]},
+        ],
+        "total_patent_count": 2,
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("tools.requests.post", return_value=mock_response):
+        result = tools.handle_patent_search("construction AI", ["construction", "scheduling"])
+
+    assert "construction scheduling" in result.lower()
+    assert "cookie" not in result.lower()
+
+
+def test_wikipedia_search_filters_by_keyword():
+    """wikipedia_search should filter results by keyword."""
+    tools.reset_web_counters()
+
+    search_response = MagicMock()
+    search_response.status_code = 200
+    search_response.json.return_value = {
+        "query": {
+            "search": [
+                {"title": "Construction management", "snippet": "<span>Construction</span> management involves planning and scheduling"},
+                {"title": "Pizza", "snippet": "Pizza is a popular food dish"},
+            ]
+        }
+    }
+    search_response.raise_for_status = MagicMock()
+
+    extract_response = MagicMock()
+    extract_response.status_code = 200
+    extract_response.json.return_value = {
+        "query": {
+            "pages": {
+                "12345": {"title": "Construction management", "extract": "Construction management is a professional service...", "fullurl": "https://en.wikipedia.org/wiki/Construction_management"}
+            }
+        }
+    }
+    extract_response.raise_for_status = MagicMock()
+
+    with patch("tools.requests.get", side_effect=[search_response, extract_response]):
+        result = tools.handle_wikipedia_search("construction management", ["construction", "management"])
+
+    assert "Construction management" in result
+    assert "pizza" not in result.lower()
+
+
+def test_sec_filings_edgar_not_installed():
+    """sec_filings should still work via API even without edgartools."""
+    tools.reset_web_counters()
+    original = tools._EDGAR_AVAILABLE
+    tools._EDGAR_AVAILABLE = False
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "hits": {
+            "hits": [
+                {"_source": {"entity_name": "Procore Technologies", "form_type": "10-K", "file_date": "2024-03-15", "entity_cik": "1611788", "file_description": "Annual report for construction software company"}},
+                {"_source": {"entity_name": "Pizza Corp", "form_type": "10-K", "file_date": "2024-02-01", "entity_cik": "9999999", "file_description": "Annual report for pizza franchise"}},
+            ]
+        }
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("tools.requests.get", return_value=mock_response):
+        result = tools.handle_sec_filings("construction software", ["construction", "software"])
+
+    assert "Procore" in result
+    assert "pizza" not in result.lower()
+
+    tools._EDGAR_AVAILABLE = original
+
+
+def test_sec_filings_section_extraction():
+    """sec_filings section mode should extract specific sections via edgartools."""
+    tools.reset_web_counters()
+    original = tools._EDGAR_AVAILABLE
+    tools._EDGAR_AVAILABLE = True
+
+    # Mock the Company and filing chain
+    mock_obj = MagicMock()
+    mock_obj.business = "Procore provides cloud-based construction management software for project managers."
+
+    mock_filing = MagicMock()
+    mock_filing.filing_date = "2024-03-15"
+    mock_filing.company = "Procore Technologies"
+    mock_filing.obj.return_value = mock_obj
+
+    mock_filings = MagicMock()
+    mock_filings.latest.return_value = mock_filing
+
+    mock_company = MagicMock()
+    mock_company.get_filings.return_value = mock_filings
+
+    with patch("tools._EdgarCompany", return_value=mock_company):
+        result = tools.handle_sec_filings("PCOR", section="business")
+
+    assert "Procore" in result
+    assert "construction management" in result.lower()
+    assert "Item 1" in result
+
+    tools._EDGAR_AVAILABLE = original
+
+
+def test_sec_filings_section_invalid():
+    """sec_filings should reject invalid section names."""
+    tools.reset_web_counters()
+    result = tools.handle_sec_filings("AAPL", section="invalid_section")
+    assert "ERROR" in result
+
+
+def test_sec_filings_section_rate_limited():
+    """sec_filings section mode should respect rate limits."""
+    tools._web_fetch_count = 3
+    result = tools.handle_sec_filings("AAPL", section="business")
+    assert "RATE LIMIT" in result
+    tools.reset_web_counters()
+
+
+def test_extract_section_from_text():
+    """_extract_section_from_text should extract sections by header."""
+    sample = (
+        "ITEM 1. BUSINESS\n\n"
+        "We are a construction management company.\n"
+        "Our products include scheduling software.\n\n"
+        "ITEM 1A. RISK FACTORS\n\n"
+        "Competition is intense.\n"
+    )
+    result = tools._extract_section_from_text(sample, "business")
+    assert "construction management" in result
+    assert "RISK FACTORS" not in result
+
+    result2 = tools._extract_section_from_text(sample, "risk_factors")
+    assert "Competition" in result2

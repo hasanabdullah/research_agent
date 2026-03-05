@@ -39,6 +39,13 @@ try:
 except ImportError:
     _NEWSAPI_AVAILABLE = False
 
+try:
+    from edgar import Company as _EdgarCompany
+    _EDGAR_AVAILABLE = True
+except ImportError:
+    _EdgarCompany = None
+    _EDGAR_AVAILABLE = False
+
 ROOT = Path(__file__).parent
 
 # Configurable paths — overridden per-topic by set_paths()
@@ -394,6 +401,158 @@ TOOL_DEFINITIONS = [
                     },
                 },
                 "required": ["query", "keywords"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "github_search",
+            "description": (
+                "Search GitHub repositories by topic, keyword, or technology. "
+                "Returns repo names, stars, descriptions, languages, and recent activity. "
+                "Great for tracking open-source competitors, developer tool adoption, "
+                "and technology trends. You MUST provide keywords to filter results — "
+                "only repos containing at least one keyword in the name or description are returned. "
+                "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (e.g. 'construction management software', 'veterinary clinic app')",
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Keywords to filter repos (e.g. ['management', 'scheduling', 'crm']). Only repos containing at least one keyword are returned.",
+                    },
+                    "sort": {
+                        "type": "string",
+                        "enum": ["stars", "forks", "updated", "best-match"],
+                        "description": "Sort order (default 'stars'). Use 'updated' for recently active projects.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Max repos to return (default 5, max 10)",
+                    },
+                },
+                "required": ["query", "keywords"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "patent_search",
+            "description": (
+                "Search US patents via the USPTO PatentsView API. "
+                "Returns patent titles, assignees, dates, and abstracts. "
+                "Use this to track innovation by company or technology area, "
+                "identify emerging technologies, and assess market maturity. "
+                "You MUST provide keywords to filter results — only patents containing "
+                "at least one keyword in the title or abstract are returned. "
+                "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query for patent titles/abstracts (e.g. 'construction scheduling AI')",
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Keywords to filter patents (e.g. ['scheduling', 'optimization', 'AI']). Only patents containing at least one keyword are returned.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Max patents to return (default 5, max 10)",
+                    },
+                },
+                "required": ["query", "keywords"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "wikipedia_search",
+            "description": (
+                "Search Wikipedia articles for industry background, market definitions, "
+                "and technology overviews. Returns article titles, summaries, and URLs. "
+                "Use this for quick industry primers and to understand market context. "
+                "You MUST provide keywords to filter results — only articles containing "
+                "at least one keyword in the title or summary are returned. "
+                "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (e.g. 'veterinary practice management software')",
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Keywords to filter articles (e.g. ['veterinary', 'practice', 'software']). Only articles containing at least one keyword are returned.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Max articles to return (default 5, max 10)",
+                    },
+                },
+                "required": ["query", "keywords"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sec_filings",
+            "description": (
+                "Search SEC EDGAR for company filings OR read specific sections of 10-K reports. "
+                "TWO MODES: (1) Search mode (default) — find filings by company/industry, returns metadata. "
+                "Keywords required to filter results. "
+                "(2) Section mode — set 'section' parameter to extract actual content from a company's "
+                "latest 10-K report. Use ticker symbol as query (e.g. 'PCOR', 'AAPL'). "
+                "Available sections: 'business' (Item 1), 'risk_factors' (Item 1A), 'mda' (Item 7 MD&A). "
+                "Section mode requires edgartools library. Keywords optional in section mode. "
+                "Use this for industry analysis — check if public competitors are growing, "
+                "find revenue data from annual reports, and assess market size. "
+                "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Company name, industry term, or ticker symbol. Use ticker (e.g. 'PCOR', 'AAPL') when using section mode.",
+                    },
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Keywords to filter filings (e.g. ['construction', 'software', 'saas']). Required in search mode, optional in section mode.",
+                    },
+                    "filing_type": {
+                        "type": "string",
+                        "enum": ["10-K", "10-Q", "S-1", "8-K"],
+                        "description": "Filing type to search (default '10-K' annual reports). 'S-1' for IPO filings, '8-K' for major events.",
+                    },
+                    "section": {
+                        "type": "string",
+                        "enum": ["business", "risk_factors", "mda"],
+                        "description": "Extract a specific section from the latest filing. 'business' = Item 1 (company overview), 'risk_factors' = Item 1A, 'mda' = Item 7 (Management Discussion & Analysis). Requires edgartools.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Max filings to return in search mode (default 5, max 10)",
+                    },
+                },
+                "required": ["query"],
             },
         },
     },
@@ -1421,6 +1580,612 @@ def handle_stackexchange_search(
         return f"ERROR searching Stack Exchange: {e}"
 
 
+# --- GitHub search tool ---
+
+_GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
+
+
+def handle_github_search(
+    query: str,
+    keywords: list[str],
+    sort: str = "stars",
+    max_results: int = 5,
+) -> str:
+    """Search GitHub repositories, filtered by keywords. Shares rate limit with web_fetch."""
+    if not keywords:
+        return "ERROR: keywords parameter is required. Provide relevant terms to filter GitHub results."
+
+    global _web_fetch_count
+    _web_fetch_count += 1
+    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+    max_results = min(int(max_results), 10)
+    sort = sort if sort in ("stars", "forks", "updated", "best-match") else "stars"
+    kw_lower = [k.lower() for k in keywords]
+
+    params = {
+        "q": query,
+        "sort": sort if sort != "best-match" else "",
+        "order": "desc",
+        "per_page": max_results * 3,
+    }
+    if sort == "best-match":
+        params.pop("sort")
+
+    try:
+        time.sleep(1)
+        resp = requests.get(
+            _GITHUB_SEARCH_URL,
+            params=params,
+            timeout=15,
+            headers={"Accept": "application/vnd.github.v3+json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        repos = data.get("items", [])
+
+        if not repos:
+            return f"No GitHub repositories found for: {query}"
+
+        matched = []
+        for repo in repos:
+            if len(matched) >= max_results:
+                break
+
+            name = repo.get("full_name", "")
+            description = repo.get("description") or ""
+            topics = " ".join(repo.get("topics", []))
+            searchable = f"{name} {description} {topics}".lower()
+
+            if any(kw in searchable for kw in kw_lower):
+                matched.append(repo)
+
+        if not matched:
+            return (
+                f"0 repos matched keywords {keywords} for query '{query}' "
+                f"(searched {len(repos)} repos). Try broader keywords."
+            )
+
+        parts = [f"GitHub search: '{query}' — {len(matched)} repos matched keywords {keywords}\n"]
+
+        for i, repo in enumerate(matched, 1):
+            name = repo.get("full_name", "N/A")
+            description = repo.get("description") or "No description"
+            if len(description) > 300:
+                description = description[:300] + "..."
+            stars = repo.get("stargazers_count", 0)
+            forks = repo.get("forks_count", 0)
+            language = repo.get("language") or "N/A"
+            updated = (repo.get("updated_at") or "")[:10]
+            url = repo.get("html_url", "N/A")
+            topics = ", ".join(repo.get("topics", [])[:5])
+
+            entry = (
+                f"\n--- Repo {i} ---\n"
+                f"Name: {name}\n"
+                f"Stars: {stars} | Forks: {forks} | Language: {language} | Updated: {updated}\n"
+                f"URL: {url}\n"
+                f"Description: {description}\n"
+            )
+            if topics:
+                entry += f"Topics: {topics}\n"
+            parts.append(entry)
+
+        rate_remaining = resp.headers.get("X-RateLimit-Remaining", "?")
+        parts.append(f"\n[GitHub API rate limit remaining: {rate_remaining}]")
+
+        output = "\n".join(parts)
+        if len(output) > 10000:
+            output = output[:10000] + "\n\n[... truncated at 10000 chars]"
+        return output
+
+    except Exception as e:
+        err = str(e)
+        if "403" in err:
+            return "ERROR: GitHub API rate limit exceeded (60 req/hr unauthenticated). Try again later."
+        return f"ERROR searching GitHub: {e}"
+
+
+# --- Patent search tool (PatentsView) ---
+
+_PATENTSVIEW_URL = "https://api.patentsview.org/patents/query"
+
+
+def handle_patent_search(
+    query: str,
+    keywords: list[str],
+    max_results: int = 5,
+) -> str:
+    """Search US patents via PatentsView API, filtered by keywords. Shares rate limit with web_fetch."""
+    if not keywords:
+        return "ERROR: keywords parameter is required. Provide relevant terms to filter patent results."
+
+    global _web_fetch_count
+    _web_fetch_count += 1
+    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+    max_results = min(int(max_results), 10)
+    kw_lower = [k.lower() for k in keywords]
+
+    payload = {
+        "q": {"_text_any": {"patent_abstract": query}},
+        "f": [
+            "patent_number", "patent_title", "patent_abstract",
+            "patent_date", "assignee_organization",
+        ],
+        "o": {"per_page": max_results * 3},
+        "s": [{"patent_date": "desc"}],
+    }
+
+    try:
+        time.sleep(1)
+        resp = requests.post(
+            _PATENTSVIEW_URL,
+            json=payload,
+            timeout=15,
+            headers={"Content-Type": "application/json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        patents = data.get("patents", [])
+
+        if not patents:
+            return f"No US patents found for: {query}"
+
+        matched = []
+        for patent in patents:
+            if len(matched) >= max_results:
+                break
+
+            title = patent.get("patent_title", "")
+            abstract = patent.get("patent_abstract") or ""
+            assignees = " ".join(
+                a.get("assignee_organization", "") or ""
+                for a in (patent.get("assignees") or [])
+            )
+            searchable = f"{title} {abstract} {assignees}".lower()
+
+            if any(kw in searchable for kw in kw_lower):
+                matched.append(patent)
+
+        if not matched:
+            return (
+                f"0 patents matched keywords {keywords} for query '{query}' "
+                f"(searched {len(patents)} patents). Try broader keywords."
+            )
+
+        parts = [f"USPTO Patents: '{query}' — {len(matched)} patents matched keywords {keywords}\n"]
+
+        for i, patent in enumerate(matched, 1):
+            title = patent.get("patent_title", "N/A")
+            number = patent.get("patent_number", "N/A")
+            date = patent.get("patent_date", "N/A")
+            abstract = patent.get("patent_abstract") or ""
+            if len(abstract) > 400:
+                abstract = abstract[:400] + "..."
+            assignee_list = patent.get("assignees") or []
+            assignees = ", ".join(
+                a.get("assignee_organization", "Unknown") or "Unknown"
+                for a in assignee_list[:3]
+            )
+
+            entry = (
+                f"\n--- Patent {i} ---\n"
+                f"Title: {title}\n"
+                f"Patent #: {number} | Filed: {date}\n"
+                f"Assignee(s): {assignees}\n"
+                f"URL: https://patents.google.com/patent/US{number}\n"
+            )
+            if abstract:
+                entry += f"Abstract: {abstract}\n"
+            parts.append(entry)
+
+        total_count = data.get("total_patent_count", "?")
+        parts.append(f"\n[Total patents matching: {total_count}]")
+
+        output = "\n".join(parts)
+        if len(output) > 10000:
+            output = output[:10000] + "\n\n[... truncated at 10000 chars]"
+        return output
+
+    except Exception as e:
+        return f"ERROR searching patents: {e}"
+
+
+# --- Wikipedia search tool ---
+
+_WIKIPEDIA_API_URL = "https://en.wikipedia.org/w/api.php"
+
+
+def handle_wikipedia_search(
+    query: str,
+    keywords: list[str],
+    max_results: int = 5,
+) -> str:
+    """Search Wikipedia articles, filtered by keywords. Shares rate limit with web_fetch."""
+    if not keywords:
+        return "ERROR: keywords parameter is required. Provide relevant terms to filter Wikipedia results."
+
+    global _web_fetch_count
+    _web_fetch_count += 1
+    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+    max_results = min(int(max_results), 10)
+    kw_lower = [k.lower() for k in keywords]
+
+    try:
+        time.sleep(1)
+        # Step 1: Search for article titles
+        search_params = {
+            "action": "query",
+            "list": "search",
+            "srsearch": query,
+            "srlimit": max_results * 3,
+            "format": "json",
+            "utf8": 1,
+        }
+        resp = requests.get(_WIKIPEDIA_API_URL, params=search_params, timeout=15)
+        resp.raise_for_status()
+        search_results = resp.json().get("query", {}).get("search", [])
+
+        if not search_results:
+            return f"No Wikipedia articles found for: {query}"
+
+        # Step 2: Get summaries for matching articles
+        matched_titles = []
+        for sr in search_results:
+            title = sr.get("title", "")
+            snippet = sr.get("snippet", "")
+            # Strip HTML from snippet
+            snippet_text = BeautifulSoup(snippet, "html.parser").get_text()
+            searchable = f"{title} {snippet_text}".lower()
+            if any(kw in searchable for kw in kw_lower):
+                matched_titles.append(title)
+            if len(matched_titles) >= max_results:
+                break
+
+        if not matched_titles:
+            return (
+                f"0 articles matched keywords {keywords} for query '{query}' "
+                f"(searched {len(search_results)} articles). Try broader keywords."
+            )
+
+        # Step 3: Get extracts (summaries) for matched articles
+        extract_params = {
+            "action": "query",
+            "titles": "|".join(matched_titles),
+            "prop": "extracts|info",
+            "exintro": True,
+            "explaintext": True,
+            "exsectionformat": "plain",
+            "inprop": "url",
+            "format": "json",
+            "utf8": 1,
+        }
+        resp2 = requests.get(_WIKIPEDIA_API_URL, params=extract_params, timeout=15)
+        resp2.raise_for_status()
+        pages = resp2.json().get("query", {}).get("pages", {})
+
+        parts = [f"Wikipedia: '{query}' — {len(matched_titles)} articles matched keywords {keywords}\n"]
+
+        for i, (page_id, page) in enumerate(pages.items(), 1):
+            if page_id == "-1":
+                continue
+            title = page.get("title", "N/A")
+            extract = page.get("extract") or "No summary available."
+            if len(extract) > 600:
+                extract = extract[:600] + "..."
+            url = page.get("fullurl", f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}")
+
+            entry = (
+                f"\n--- Article {i} ---\n"
+                f"Title: {title}\n"
+                f"URL: {url}\n"
+                f"Summary: {extract}\n"
+            )
+            parts.append(entry)
+
+        output = "\n".join(parts)
+        if len(output) > 10000:
+            output = output[:10000] + "\n\n[... truncated at 10000 chars]"
+        return output
+
+    except Exception as e:
+        return f"ERROR searching Wikipedia: {e}"
+
+
+# --- SEC EDGAR tool ---
+
+_EDGAR_FULLTEXT_URL = "https://efts.sec.gov/LATEST/search-index"
+_EDGAR_COMPANY_URL = "https://efts.sec.gov/LATEST/search-index"
+
+
+def _extract_sec_section(query: str, filing_type: str, section: str) -> str:
+    """Extract a specific section from a company's latest filing using edgartools."""
+    if not _EDGAR_AVAILABLE:
+        return "ERROR: edgartools is not installed. Run: pip install edgartools"
+
+    section_labels = {
+        "business": "Item 1 — Business",
+        "risk_factors": "Item 1A — Risk Factors",
+        "mda": "Item 7 — Management Discussion & Analysis",
+    }
+    section_label = section_labels.get(section, section)
+
+    try:
+        company = _EdgarCompany(query)
+        filings = company.get_filings(form=filing_type)
+        if not filings:
+            return f"No {filing_type} filings found for ticker '{query}'."
+
+        filing = filings.latest() if hasattr(filings, 'latest') else filings[0]
+        filing_date = getattr(filing, 'filing_date', 'N/A')
+        company_name = getattr(filing, 'company', query)
+
+        # Try to get structured object (TenK/TenQ)
+        obj = None
+        try:
+            obj = filing.obj()
+        except Exception:
+            pass
+
+        content = None
+
+        # Attempt 1: property access on the structured object
+        if obj is not None:
+            prop_map = {
+                "business": ["business"],
+                "risk_factors": ["risk_factors"],
+                "mda": ["management_discussion", "mda"],
+            }
+            for prop_name in prop_map.get(section, []):
+                try:
+                    val = getattr(obj, prop_name, None)
+                    if val is not None:
+                        content = str(val)
+                        break
+                except Exception:
+                    continue
+
+            # Attempt 2: dictionary-style access
+            if not content:
+                item_map = {
+                    "business": ["Item 1", "ITEM 1"],
+                    "risk_factors": ["Item 1A", "ITEM 1A"],
+                    "mda": ["Item 7", "ITEM 7"],
+                }
+                for item_key in item_map.get(section, []):
+                    try:
+                        val = obj[item_key]
+                        if val is not None:
+                            content = str(val)
+                            break
+                    except (KeyError, TypeError, IndexError):
+                        continue
+
+        # Attempt 3: get full text and extract section by header
+        if not content:
+            try:
+                full_text = filing.text()
+                if full_text:
+                    content = _extract_section_from_text(full_text, section)
+            except Exception:
+                pass
+
+        if not content:
+            return (
+                f"Could not extract '{section_label}' from {company_name}'s "
+                f"latest {filing_type} (filed {filing_date}). "
+                f"The section may not be available in this filing format."
+            )
+
+        # Truncate to 5000 chars
+        if len(content) > 5000:
+            content = content[:5000] + "\n\n[... truncated at 5000 chars]"
+
+        return (
+            f"SEC EDGAR — {company_name} | {filing_type} (filed {filing_date})\n"
+            f"Section: {section_label}\n"
+            f"{'=' * 60}\n\n"
+            f"{content}"
+        )
+
+    except Exception as e:
+        err = str(e)
+        if "No company" in err or "not found" in err.lower():
+            return f"ERROR: Company '{query}' not found. Use a valid ticker symbol (e.g. 'AAPL', 'PCOR')."
+        return f"ERROR extracting {section_label} for '{query}': {e}"
+
+
+def _extract_section_from_text(text: str, section: str) -> str | None:
+    """Extract a section from filing plain text by finding section headers."""
+    # Map section names to regex patterns for 10-K item headers
+    patterns = {
+        "business": r"(?:^|\n)\s*(?:ITEM\s+1[.\s—\-]+BUSINESS|ITEM\s+1\b(?!\s*A))",
+        "risk_factors": r"(?:^|\n)\s*(?:ITEM\s+1A[.\s—\-]+RISK\s+FACTORS|ITEM\s+1A\b)",
+        "mda": r"(?:^|\n)\s*(?:ITEM\s+7[.\s—\-]+MANAGEMENT|ITEM\s+7\b(?!\s*A))",
+    }
+    # The next section after each item
+    next_patterns = {
+        "business": r"(?:^|\n)\s*ITEM\s+1A\b",
+        "risk_factors": r"(?:^|\n)\s*ITEM\s+(?:1B|2)\b",
+        "mda": r"(?:^|\n)\s*ITEM\s+7A\b",
+    }
+
+    start_pattern = patterns.get(section)
+    end_pattern = next_patterns.get(section)
+    if not start_pattern:
+        return None
+
+    start_match = _re.search(start_pattern, text, _re.IGNORECASE)
+    if not start_match:
+        return None
+
+    start_pos = start_match.end()
+
+    if end_pattern:
+        end_match = _re.search(end_pattern, text[start_pos:], _re.IGNORECASE)
+        if end_match:
+            return text[start_pos:start_pos + end_match.start()].strip()
+
+    # If no end marker found, take next 5000 chars
+    return text[start_pos:start_pos + 5000].strip()
+
+
+def handle_sec_filings(
+    query: str,
+    keywords: list[str] | None = None,
+    filing_type: str = "10-K",
+    max_results: int = 5,
+    section: str | None = None,
+) -> str:
+    """Search SEC EDGAR filings or extract specific sections. Shares rate limit with web_fetch."""
+    # Section mode: extract specific section from a company's latest filing
+    if section:
+        if section not in ("business", "risk_factors", "mda"):
+            return "ERROR: section must be one of: 'business', 'risk_factors', 'mda'"
+
+        global _web_fetch_count
+        _web_fetch_count += 1
+        if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+            return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+        time.sleep(1)
+        return _extract_sec_section(query, filing_type, section)
+
+    # Search mode: find filings by company/industry
+    if not keywords:
+        return "ERROR: keywords parameter is required in search mode. Provide relevant terms to filter SEC filings."
+
+    _web_fetch_count += 1
+    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+    max_results = min(int(max_results), 10)
+    filing_type = filing_type if filing_type in ("10-K", "10-Q", "S-1", "8-K") else "10-K"
+    kw_lower = [k.lower() for k in keywords]
+
+    try:
+        time.sleep(1)
+        # Use EDGAR full-text search API
+        params = {
+            "q": query,
+            "forms": filing_type,
+            "from": 0,
+            "size": max_results * 3,
+        }
+        resp = requests.get(
+            "https://efts.sec.gov/LATEST/search-index",
+            params=params,
+            timeout=15,
+            headers={"User-Agent": "deepshika-research-agent contact@example.com"},
+        )
+
+        # Fallback: use edgartools if available
+        if resp.status_code != 200 and _EDGAR_AVAILABLE:
+            try:
+                company = _EdgarCompany(query)
+                filings = company.get_filings(form=filing_type)
+                if not filings:
+                    return f"No SEC filings found for: {query}"
+
+                matched = []
+                filing_list = list(filings.head(max_results * 3)) if hasattr(filings, 'head') else list(filings)[:max_results * 3]
+                for f in filing_list:
+                    if len(matched) >= max_results:
+                        break
+                    company_name = str(getattr(f, 'company', query))
+                    filing_desc = str(getattr(f, 'description', ''))
+                    searchable = f"{company_name} {filing_desc}".lower()
+                    if any(kw in searchable for kw in kw_lower):
+                        matched.append(f)
+
+                if not matched:
+                    return f"0 filings matched keywords {keywords} for '{query}'."
+
+                parts = [f"SEC EDGAR: '{query}' — {len(matched)} {filing_type} filings matched keywords {keywords}\n"]
+                for i, f in enumerate(matched, 1):
+                    entry = (
+                        f"\n--- Filing {i} ---\n"
+                        f"Company: {getattr(f, 'company', 'N/A')}\n"
+                        f"Form: {getattr(f, 'form', filing_type)}\n"
+                        f"Date: {getattr(f, 'filing_date', 'N/A')}\n"
+                        f"Description: {getattr(f, 'description', 'N/A')}\n"
+                    )
+                    parts.append(entry)
+
+                output = "\n".join(parts)
+                if len(output) > 10000:
+                    output = output[:10000] + "\n\n[... truncated at 10000 chars]"
+                return output
+            except Exception:
+                pass
+
+        # Parse EDGAR API response
+        if resp.status_code == 200:
+            data = resp.json()
+            hits = data.get("hits", {}).get("hits", [])
+            if not hits:
+                hits = data.get("filings", [])
+
+            if not hits:
+                return f"No SEC filings found for: {query}"
+
+            matched = []
+            for hit in hits:
+                if len(matched) >= max_results:
+                    break
+
+                source = hit.get("_source", hit)
+                company_name = source.get("entity_name", source.get("company_name", ""))
+                form_type = source.get("form_type", source.get("forms", ""))
+                file_date = source.get("file_date", source.get("filing_date", ""))
+                file_desc = source.get("file_description", "")
+
+                searchable = f"{company_name} {file_desc} {form_type}".lower()
+                if any(kw in searchable for kw in kw_lower):
+                    matched.append(source)
+
+            if not matched:
+                return (
+                    f"0 filings matched keywords {keywords} for '{query}' "
+                    f"(searched {len(hits)} filings). Try broader keywords."
+                )
+
+            parts = [f"SEC EDGAR: '{query}' — {len(matched)} {filing_type} filings matched keywords {keywords}\n"]
+
+            for i, source in enumerate(matched, 1):
+                company_name = source.get("entity_name", source.get("company_name", "N/A"))
+                cik = source.get("entity_cik", source.get("cik", "N/A"))
+                file_date = source.get("file_date", source.get("filing_date", "N/A"))
+                file_desc = source.get("file_description", "")
+                if len(file_desc) > 300:
+                    file_desc = file_desc[:300] + "..."
+
+                entry = (
+                    f"\n--- Filing {i} ---\n"
+                    f"Company: {company_name}\n"
+                    f"CIK: {cik} | Form: {filing_type} | Filed: {file_date}\n"
+                    f"URL: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}\n"
+                )
+                if file_desc:
+                    entry += f"Description: {file_desc}\n"
+                parts.append(entry)
+
+            output = "\n".join(parts)
+            if len(output) > 10000:
+                output = output[:10000] + "\n\n[... truncated at 10000 chars]"
+            return output
+
+        return f"ERROR: SEC EDGAR API returned status {resp.status_code}. The EDGAR full-text search may be temporarily unavailable."
+
+    except Exception as e:
+        return f"ERROR searching SEC filings: {e}"
+
+
 # --- Dispatcher ---
 
 TOOL_HANDLERS = {
@@ -1437,6 +2202,10 @@ TOOL_HANDLERS = {
     "google_trends": lambda args: handle_google_trends(args.get("keywords", []), args.get("timeframe", "12m"), args.get("include_related", True)),
     "startup_news": lambda args: handle_startup_news(args["query"], args.get("keywords", []), args.get("sources"), args.get("sort_by", "relevancy"), args.get("max_results", 5)),
     "stackexchange_search": lambda args: handle_stackexchange_search(args["query"], args.get("keywords", []), args.get("site", "stackoverflow"), args.get("sort", "relevance"), args.get("max_results", 5), args.get("tagged")),
+    "github_search": lambda args: handle_github_search(args["query"], args.get("keywords", []), args.get("sort", "stars"), args.get("max_results", 5)),
+    "patent_search": lambda args: handle_patent_search(args["query"], args.get("keywords", []), args.get("max_results", 5)),
+    "wikipedia_search": lambda args: handle_wikipedia_search(args["query"], args.get("keywords", []), args.get("max_results", 5)),
+    "sec_filings": lambda args: handle_sec_filings(args["query"], args.get("keywords"), args.get("filing_type", "10-K"), args.get("max_results", 5), args.get("section")),
 }
 
 

@@ -1922,7 +1922,7 @@ async function renderConfigure() {
     <div class="config-subtabs">
       <div class="config-subtab ${tab === 'agent' ? 'active' : ''}" onclick="switchConfigSubTab('agent')">Agent</div>
       <div class="config-subtab ${tab === 'apikeys' ? 'active' : ''}" onclick="switchConfigSubTab('apikeys')">API Keys</div>
-      <div class="config-subtab ${tab === 'notion' ? 'active' : ''}" onclick="switchConfigSubTab('notion')">Notion</div>
+      <div class="config-subtab ${tab === 'profile' ? 'active' : ''}" onclick="switchConfigSubTab('profile')">Profile Data</div>
     </div>
   `;
 
@@ -2091,35 +2091,6 @@ async function renderConfigure() {
       </div>
     </div>
     <div class="config-section">
-      <div class="config-section-header" onclick="toggleConfigSection('profile-data')">
-        <h3><span class="arrow ${_openConfigSections.has('profile-data') ? 'open' : ''}" id="cfg-arrow-profile-data">&#9654;</span> Profile Data</h3>
-        <span class="config-section-meta" id="profile-data-status"></span>
-      </div>
-      <div class="config-section-body ${_openConfigSections.has('profile-data') ? 'open' : ''}" id="cfg-body-profile-data">
-        <div style="margin-bottom:16px">
-          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Resume (PDF, TXT, or MD)</label>
-          <div style="display:flex;align-items:center;gap:10px">
-            <input type="file" id="resume-file" accept=".pdf,.txt,.md" style="font-size:12px" />
-            <button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px" onclick="uploadProfileFile('resume')">Upload Resume</button>
-          </div>
-          <div id="resume-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
-        </div>
-        <div style="margin-bottom:16px">
-          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">LinkedIn Connections (CSV exports — upload multiple files)</label>
-          <div style="display:flex;align-items:center;gap:10px">
-            <input type="file" id="linkedin-csv-file" accept=".csv" multiple style="font-size:12px" />
-            <button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px" onclick="uploadLinkedInFiles()">Upload CSV(s)</button>
-          </div>
-          <div id="linkedin-csv-list" style="margin-top:8px"></div>
-          <div id="linkedin-csv-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
-        </div>
-        <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
-          Export LinkedIn connections from <a href="https://www.linkedin.com/mypreferences/d/download-my-data" target="_blank" style="color:var(--accent)">LinkedIn Data Export</a> (select "Connections" only).
-          You can upload multiple CSV files — they will be merged automatically.
-        </div>
-      </div>
-    </div>
-    <div class="config-section">
       <div class="config-section-header" onclick="toggleConfigSection('reddit')">
         <h3><span class="arrow ${_openConfigSections.has('reddit') ? 'open' : ''}" id="cfg-arrow-reddit">&#9654;</span> Reddit API</h3>
         <span class="config-section-meta"><span class="status-dot" style="background:${redditCfg.configured ? 'var(--green)' : 'var(--red)'}"></span>${redditCfg.configured ? 'Configured' : 'Not configured'}</span>
@@ -2155,10 +2126,7 @@ async function renderConfigure() {
         <button class="save-btn" id="newsapi-config-btn" onclick="saveNewsapiConfig(this)">Save NewsAPI Config</button>
       </div>
     </div>`;
-  }
 
-  // --- Notion sub-tab ---
-  if (tab === 'notion') {
     const notionConnected = notionCfg.token_set && notionCfg.root_page_id;
     const statusDot = notionConnected
       ? '<span class="status-dot" style="background:var(--green)"></span>Connected'
@@ -2189,6 +2157,53 @@ async function renderConfigure() {
         ${hubLink}
       </div>
     </div>`;
+  }
+
+  // --- Profile Data sub-tab ---
+  if (tab === 'profile') {
+    if (!state.selected) {
+      html += '<div style="color:var(--text2);padding:20px;text-align:center">Select an agent from the sidebar to manage profile data.</div>';
+    } else {
+      html += `
+      <div class="config-section">
+        <div class="config-section-header" onclick="toggleConfigSection('resume')">
+          <h3><span class="arrow ${_openConfigSections.has('resume') ? 'open' : ''}" id="cfg-arrow-resume">&#9654;</span> Resume</h3>
+          <span class="config-section-meta" id="resume-header-status"></span>
+        </div>
+        <div class="config-section-body ${_openConfigSections.has('resume') ? 'open' : ''}" id="cfg-body-resume">
+          <div style="margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <input type="file" id="resume-file" accept=".pdf,.txt,.md" style="font-size:12px" />
+              <button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px" onclick="uploadProfileFile('resume')">Upload Resume</button>
+            </div>
+            <div id="resume-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
+          </div>
+          <div style="font-size:12px;color:var(--text2)">
+            Upload your resume (PDF, TXT, or MD). The agent reads this to match your experience against roles and tailor pitch narratives.
+          </div>
+        </div>
+      </div>
+      <div class="config-section">
+        <div class="config-section-header" onclick="toggleConfigSection('linkedin-data')">
+          <h3><span class="arrow ${_openConfigSections.has('linkedin-data') ? 'open' : ''}" id="cfg-arrow-linkedin-data">&#9654;</span> LinkedIn Connections</h3>
+          <span class="config-section-meta" id="linkedin-header-status"></span>
+        </div>
+        <div class="config-section-body ${_openConfigSections.has('linkedin-data') ? 'open' : ''}" id="cfg-body-linkedin-data">
+          <div style="margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <input type="file" id="linkedin-csv-file" accept=".csv" multiple style="font-size:12px" />
+              <button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px" onclick="uploadLinkedInFiles()">Upload CSV(s)</button>
+            </div>
+            <div id="linkedin-csv-list" style="margin-top:8px"></div>
+            <div id="linkedin-csv-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
+          </div>
+          <div style="font-size:12px;color:var(--text2)">
+            Export your connections from <a href="https://www.linkedin.com/mypreferences/d/download-my-data" target="_blank" style="color:var(--accent)">LinkedIn Data Export</a> (select "Connections" only).
+            You can upload multiple CSV files — they are merged automatically. The agent uses these to find warm networking paths into target companies.
+          </div>
+        </div>
+      </div>`;
+    }
   }
 
   el.innerHTML = html;
@@ -2354,15 +2369,18 @@ async function loadProfileDataStatus() {
   if (!state.selected) return;
   try {
     const res = await fetch(`/api/topics/${encodeURIComponent(state.selected)}/profile-data`).then(r => r.json());
-    const el = document.getElementById('profile-data-status');
-    if (el) {
-      const hasResume = res.resume;
-      const hasLinkedin = res.linkedin_file_count > 0;
-      const count = (hasResume ? 1 : 0) + (hasLinkedin ? 1 : 0);
-      el.innerHTML = `<span class="status-dot" style="background:${count === 2 ? 'var(--green)' : count === 1 ? 'var(--yellow)' : 'var(--red)'}"></span>${hasResume ? 'Resume' : 'No resume'}${hasLinkedin ? ` + ${res.linkedin_total_contacts} contacts (${res.linkedin_file_count} file${res.linkedin_file_count > 1 ? 's' : ''})` : ' + No LinkedIn data'}`;
-    }
+    const hasResume = res.resume;
+    const hasLinkedin = res.linkedin_file_count > 0;
+
+    // Header status badges
+    const rHeader = document.getElementById('resume-header-status');
+    if (rHeader) rHeader.innerHTML = `<span class="status-dot" style="background:${hasResume ? 'var(--green)' : 'var(--red)'}"></span>${hasResume ? 'Uploaded (' + res.resume_size + ')' : 'Not uploaded'}`;
+    const lHeader = document.getElementById('linkedin-header-status');
+    if (lHeader) lHeader.innerHTML = `<span class="status-dot" style="background:${hasLinkedin ? 'var(--green)' : 'var(--red)'}"></span>${hasLinkedin ? res.linkedin_total_contacts + ' contacts (' + res.linkedin_file_count + ' file' + (res.linkedin_file_count > 1 ? 's' : '') + ')' : 'Not uploaded'}`;
+
+    // Inline status
     const rStatus = document.getElementById('resume-status');
-    if (rStatus) rStatus.textContent = res.resume ? `Uploaded (${res.resume_size})` : 'Not uploaded';
+    if (rStatus) rStatus.textContent = hasResume ? `Uploaded (${res.resume_size})` : 'Not uploaded';
     const listEl = document.getElementById('linkedin-csv-list');
     if (listEl && res.linkedin_files && res.linkedin_files.length > 0) {
       listEl.innerHTML = res.linkedin_files.map(f =>

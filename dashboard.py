@@ -147,6 +147,15 @@ def _load_agent_budget(name: str) -> dict | None:
     return None
 
 
+def _is_completed(name: str) -> bool:
+    """Check if a topic is marked as completed in agent_config.yaml."""
+    cfg_path = ROOT / "topics" / name / "agent_config.yaml"
+    if cfg_path.exists():
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        return bool(cfg.get("completed", False))
+    return False
+
+
 def _load_buckets(name: str) -> list[dict]:
     """Load research_buckets from agent_config.yaml, or empty list."""
     cfg_path = ROOT / "topics" / name / "agent_config.yaml"
@@ -301,6 +310,7 @@ def _topic_summary(name: str, active_topic: str) -> dict:
         "budget": agent_budget,
         "checkpoint": checkpoint,
         "selection_checkpoint": selection_checkpoint,
+        "completed": _is_completed(name),
     }
 
 
@@ -573,6 +583,19 @@ def api_switch_topic(name: str):
     return {"active_topic": name}
 
 
+@app.post("/api/topics/{name}/toggle-completed")
+def api_toggle_completed(name: str):
+    """Toggle the completed flag on a topic's agent_config.yaml."""
+    _topic_dir(name)
+    cfg_path = ROOT / "topics" / name / "agent_config.yaml"
+    cfg = {}
+    if cfg_path.exists():
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    cfg["completed"] = not cfg.get("completed", False)
+    cfg_path.write_text(yaml.dump(cfg, default_flow_style=False), encoding="utf-8")
+    return {"completed": cfg["completed"]}
+
+
 @app.get("/api/topics/{name}/research")
 def api_research_list(name: str):
     paths = _paths_for(name)
@@ -780,6 +803,92 @@ def api_put_prompt(name: str, body: TextBody):
     paths = _paths_for(name)
     paths["agent_parameters"].write_text(body.content, encoding="utf-8")
     return {"saved": True}
+
+
+class ConfigDocPublish(BaseModel):
+    doc_type: str  # "mission" or "agent_parameters"
+
+
+@app.post("/api/topics/{name}/publish-config-doc")
+def api_publish_config_doc(name: str, body: ConfigDocPublish):
+    """Publish mission.md or agent_parameters.md to Notion."""
+    paths = _paths_for(name)
+
+    if body.doc_type == "mission":
+        file_path = paths["mission"]
+        title = f"Research Objective — {name}"
+        state_key = "_config_mission"
+    elif body.doc_type == "agent_parameters":
+        file_path = paths["agent_parameters"]
+        title = f"Agent Parameters — {name}"
+        state_key = "_config_agent_parameters"
+    else:
+        raise HTTPException(400, f"Unknown doc_type: {body.doc_type}")
+
+    if not file_path or not file_path.exists():
+        raise HTTPException(404, f"File not found: {body.doc_type}")
+
+    content = file_path.read_text(encoding="utf-8").strip()
+    if not content:
+        raise HTTPException(404, f"No content in {body.doc_type} to publish")
+
+    notion_cfg = _load_notion_config()
+    if not notion_cfg["token"]:
+        raise HTTPException(500, "Notion token not configured")
+    if not notion_cfg.get("root_page_id", "").strip():
+        raise HTTPException(500, "Notion root page ID not configured")
+
+    headers = _notion_headers(notion_cfg["token"])
+    blocks = _md_to_notion_blocks(content)
+
+    parent_page_id = notion_cfg["root_page_id"].strip()
+
+    publish_state_path = paths["data_dir"] / "notion_publish.json"
+    publish_state = {}
+    if publish_state_path.exists():
+        publish_state = json.loads(publish_state_path.read_text(encoding="utf-8"))
+
+    now = datetime.now(timezone.utc).isoformat()
+    existing = publish_state.get(state_key)
+
+    try:
+        if existing and isinstance(existing, dict) and existing.get("page_id"):
+            try:
+                _notion_update_page(existing["page_id"], title, blocks, headers)
+                result_page_id = existing["page_id"]
+                url = existing.get("url", f"https://notion.so/{result_page_id.replace('-', '')}")
+            except (http_requests.HTTPError, Exception):
+                page = _notion_create_page(parent_page_id, title, blocks, headers)
+                result_page_id = page["id"]
+                url = page.get("url", f"https://notion.so/{result_page_id.replace('-', '')}")
+        else:
+            page = _notion_create_page(parent_page_id, title, blocks, headers)
+            result_page_id = page["id"]
+            url = page.get("url", f"https://notion.so/{result_page_id.replace('-', '')}")
+
+        publish_state[state_key] = {
+            "page_id": result_page_id,
+            "url": url,
+            "published_at": now,
+        }
+        publish_state_path.write_text(json.dumps(publish_state, indent=2), encoding="utf-8")
+
+        return {
+            "published_at": now,
+            "url": url,
+            "doc_type": body.doc_type,
+            "status": "ok",
+        }
+    except http_requests.HTTPError as e:
+        resp_text = ""
+        if hasattr(e, "response") and e.response is not None:
+            try:
+                resp_text = e.response.text
+            except Exception:
+                pass
+        raise HTTPException(502, f"Notion API error: {e} — {resp_text}")
+    except Exception as e:
+        raise HTTPException(502, f"Notion publish failed: {type(e).__name__}: {e}")
 
 
 @app.get("/api/topics/{name}/cycles")

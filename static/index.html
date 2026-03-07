@@ -43,6 +43,11 @@
   .topic-card .edit-btn:hover { color: var(--accent) !important; }
   .topic-card:hover .clone-btn { opacity: 1 !important; }
   .topic-card .clone-btn:hover { color: var(--green) !important; }
+  .topic-card:hover .complete-btn { opacity: 1 !important; }
+  .topic-card .complete-btn:hover { color: var(--green) !important; }
+  .topic-card .complete-btn.is-completed { opacity: 1 !important; color: var(--green) !important; }
+  .topic-card.completed { opacity: 0.55; }
+  .topic-card.completed .name { text-decoration: line-through; text-decoration-color: #9ca3af; }
   #new-topic-btn { margin: 10px; padding: 9px; background: transparent; border: 1px dashed #505050; border-radius: 8px; color: #9ca3af; cursor: pointer; text-align: center; font-size: 12px; font-weight: 500; transition: all 0.15s ease; }
   #new-topic-btn:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -656,13 +661,14 @@ function renderSidebar() {
   el.innerHTML = state.topics.map(t => {
     const n = esc(t.name);
     return `
-    <div class="topic-card ${state.selected === t.name ? 'selected' : ''}" onclick="selectTopic('${n}')">
+    <div class="topic-card ${state.selected === t.name ? 'selected' : ''} ${t.completed ? 'completed' : ''}" onclick="selectTopic('${n}')">
       <div class="name" style="justify-content:space-between">
         <span style="display:flex;align-items:center;gap:6px">
           ${t.running ? '<span class="running-dot" title="Running"></span>' : (t.crashed ? '<span class="crashed-dot" title="Crashed"></span>' : (t.active ? '<span class="active-dot"></span>' : ''))}
           ${escHtml(t.name)}
         </span>
         <span style="display:flex;gap:2px">
+          <span class="complete-btn ${t.completed ? 'is-completed' : ''}" title="${t.completed ? 'Mark incomplete' : 'Mark completed'}" onclick="event.stopPropagation();toggleCompleted('${n}')" style="opacity:0;color:#9ca3af;font-size:13px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x2714;</span>
           <span class="clone-btn" title="Clone agent" onclick="event.stopPropagation();cloneTopic('${n}')" style="opacity:0;color:#9ca3af;font-size:13px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x29C9;</span>
           <span class="edit-btn" title="Edit agent" onclick="event.stopPropagation();showEditModal('${n}')" style="opacity:0;color:#9ca3af;font-size:13px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x270E;</span>
           <span class="delete-btn" title="Delete agent" onclick="event.stopPropagation();confirmDelete('${n}')" style="opacity:0;color:#9ca3af;font-size:14px;cursor:pointer;padding:0 4px;transition:opacity 0.15s">&#x2715;</span>
@@ -671,7 +677,7 @@ function renderSidebar() {
       <div class="meta">
         <span>${t.cycles} cycles</span>
         <span>$${t.cost.toFixed(4)}</span>
-        ${t.running ? '<span style="color:var(--green)">running</span>' : (t.crashed ? '<span style="color:var(--red)">crashed</span>' : (t.checkpoint ? '<span style="color:var(--yellow)">checkpoint</span>' : ''))}
+        ${t.completed ? '<span style="color:var(--green)">completed</span>' : (t.running ? '<span style="color:var(--green)">running</span>' : (t.crashed ? '<span style="color:var(--red)">crashed</span>' : (t.checkpoint ? '<span style="color:var(--yellow)">checkpoint</span>' : '')))}
       </div>
     </div>
   `}).join('');
@@ -738,6 +744,17 @@ function renderAgentControl() {
     `;
   } else {
     el.innerHTML = `<button style="font-size:11px;background:var(--green);border:1px solid var(--green);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="startAgent('${n}')">Start</button>`;
+  }
+}
+
+async function toggleCompleted(name) {
+  try {
+    const res = await api(`topics/${name}/toggle-completed`, { method: 'POST' });
+    const t = state.topics.find(t => t.name === name);
+    if (t) t.completed = res.completed;
+    renderSidebar();
+  } catch (e) {
+    alert('Failed to toggle completed: ' + e.message);
   }
 }
 
@@ -1953,7 +1970,11 @@ async function renderConfigure() {
         </div>
         <div class="config-section-body ${_openConfigSections.has('mission') ? 'open' : ''}" id="cfg-body-mission">
           <textarea id="mission-editor">${escHtml(mission.content)}</textarea>
-          <button class="save-btn" onclick="saveMission(this)">Save Research Objective</button>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="save-btn" onclick="saveMission(this)">Save Research Objective</button>
+            <button class="bucket-publish-btn" id="publish-mission-btn" onclick="publishConfigDoc('mission', this)">Push to Notion</button>
+            <span id="publish-mission-status" style="font-size:11px;color:var(--text2)"></span>
+          </div>
         </div>
       </div>
       <div class="config-section">
@@ -1963,7 +1984,11 @@ async function renderConfigure() {
         </div>
         <div class="config-section-body ${_openConfigSections.has('params') ? 'open' : ''}" id="cfg-body-params">
           <textarea id="prompt-editor">${escHtml(prompt.content)}</textarea>
-          <button class="save-btn" onclick="savePrompt(this)">Save Parameters</button>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="save-btn" onclick="savePrompt(this)">Save Parameters</button>
+            <button class="bucket-publish-btn" id="publish-params-btn" onclick="publishConfigDoc('agent_parameters', this)">Push to Notion</button>
+            <span id="publish-params-status" style="font-size:11px;color:var(--text2)"></span>
+          </div>
         </div>
       </div>`;
     }
@@ -2302,6 +2327,27 @@ async function savePrompt(btn) {
   });
   btn.textContent = 'Saved!'; btn.classList.add('saved');
   setTimeout(() => { btn.textContent = 'Save Parameters'; btn.classList.remove('saved'); }, 1500);
+}
+
+async function publishConfigDoc(docType, btn) {
+  const statusId = docType === 'mission' ? 'publish-mission-status' : 'publish-params-status';
+  const statusEl = document.getElementById(statusId);
+  const origText = btn.textContent;
+  btn.textContent = 'Publishing...';
+  btn.disabled = true;
+  try {
+    const result = await api(`topics/${state.selected}/publish-config-doc`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ doc_type: docType })
+    });
+    statusEl.innerHTML = `<a href="${result.url}" target="_blank" style="color:var(--green);font-weight:500">Published ${formatTimestamp(result.published_at)}</a>`;
+    btn.textContent = 'Published!';
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+  } catch(e) {
+    statusEl.innerHTML = `<span style="color:var(--red)">${e.message || 'Publish failed'}</span>`;
+    btn.textContent = origText;
+    btn.disabled = false;
+  }
 }
 
 // --- Delete ---

@@ -2464,6 +2464,54 @@ def _human_size(size_bytes: int) -> str:
     return f"{size_bytes / (1024 * 1024):.1f} MB"
 
 
+def _linkedin_csv_files(d: Path) -> list[Path]:
+    """Return all LinkedIn CSV files in profile_data dir, sorted by name."""
+    if not d.exists():
+        return []
+    return sorted(f for f in d.iterdir() if f.name.startswith("linkedin_") and f.suffix == ".csv")
+
+
+def _rebuild_linkedin_summary(d: Path):
+    """Parse all LinkedIn CSVs in profile_data and rebuild the combined summary."""
+    import csv
+    import io
+
+    csv_files = _linkedin_csv_files(d)
+    all_rows = []
+    for csv_file in csv_files:
+        try:
+            text = csv_file.read_text(encoding="utf-8", errors="replace")
+            reader = csv.DictReader(io.StringIO(text))
+            all_rows.extend(list(reader))
+        except Exception:
+            continue
+
+    if not all_rows:
+        summary_path = d / "linkedin_connections_summary.txt"
+        if summary_path.exists():
+            summary_path.unlink()
+        return
+
+    summary_lines = [f"# LinkedIn Connections Summary ({len(all_rows)} total from {len(csv_files)} file(s))\n"]
+    for row in all_rows:
+        parts = []
+        fn = row.get("First Name", "")
+        ln = row.get("Last Name", "")
+        if fn or ln:
+            parts.append(f"{fn} {ln}".strip())
+        company = row.get("Company", "")
+        if company:
+            parts.append(f"@ {company}")
+        position = row.get("Position", "")
+        if position:
+            parts.append(f"({position})")
+        if parts:
+            summary_lines.append(" ".join(parts))
+
+    summary_path = d / "linkedin_connections_summary.txt"
+    summary_path.write_text("\n".join(summary_lines), encoding="utf-8")
+
+
 @app.get("/api/topics/{name}/profile-data")
 def api_get_profile_data(name: str):
     """Return which profile data files exist for this topic."""
@@ -2471,21 +2519,30 @@ def api_get_profile_data(name: str):
     d = ROOT / "topics" / name / "data" / "profile_data"
     resume_exists = False
     resume_size = ""
-    linkedin_exists = False
-    linkedin_size = ""
+    linkedin_files = []
+    linkedin_total_contacts = 0
     if d.exists():
         for f in d.iterdir():
             if f.name.startswith("resume"):
                 resume_exists = True
                 resume_size = _human_size(f.stat().st_size)
-            elif f.name.startswith("linkedin_connections"):
-                linkedin_exists = True
-                linkedin_size = _human_size(f.stat().st_size)
+            elif f.name.startswith("linkedin_") and f.suffix == ".csv":
+                linkedin_files.append({
+                    "name": f.name,
+                    "size": _human_size(f.stat().st_size),
+                })
+        # Count contacts from summary
+        summary = d / "linkedin_connections_summary.txt"
+        if summary.exists():
+            text = summary.read_text(encoding="utf-8", errors="replace")
+            # Count non-empty, non-header lines
+            linkedin_total_contacts = sum(1 for line in text.split("\n") if line.strip() and not line.startswith("#"))
     return {
         "resume": resume_exists,
         "resume_size": resume_size,
-        "linkedin_connections": linkedin_exists,
-        "linkedin_connections_size": linkedin_size,
+        "linkedin_files": linkedin_files,
+        "linkedin_file_count": len(linkedin_files),
+        "linkedin_total_contacts": linkedin_total_contacts,
     }
 
 
@@ -2497,47 +2554,39 @@ async def api_upload_profile_data(name: str, file_type: str, file: UploadFile):
         raise HTTPException(400, f"Invalid file_type: {file_type}")
 
     d = _profile_data_dir(name)
-
-    # Remove any existing file of this type
-    for existing in d.iterdir():
-        if existing.name.startswith(file_type):
-            existing.unlink()
-
-    # Determine extension from uploaded filename
-    ext = Path(file.filename).suffix if file.filename else ".txt"
-    dest = d / f"{file_type}{ext}"
     content = await file.read()
-    dest.write_bytes(content)
+    ext = Path(file.filename).suffix if file.filename else ".txt"
 
-    # For LinkedIn CSV, also create a summary text file the agent can read more easily
-    if file_type == "linkedin_connections" and ext.lower() == ".csv":
-        try:
-            import csv
-            import io
-            text = content.decode("utf-8", errors="replace")
-            reader = csv.DictReader(io.StringIO(text))
-            rows = list(reader)
-            summary_lines = [f"# LinkedIn Connections Summary ({len(rows)} total)\n"]
-            for row in rows:
-                parts = []
-                fn = row.get("First Name", "")
-                ln = row.get("Last Name", "")
-                if fn or ln:
-                    parts.append(f"{fn} {ln}".strip())
-                company = row.get("Company", "")
-                if company:
-                    parts.append(f"@ {company}")
-                position = row.get("Position", "")
-                if position:
-                    parts.append(f"({position})")
-                if parts:
-                    summary_lines.append(" ".join(parts))
-            summary_path = d / "linkedin_connections_summary.txt"
-            summary_path.write_text("\n".join(summary_lines), encoding="utf-8")
-        except Exception:
-            pass  # summary is best-effort
+    if file_type == "resume":
+        # Resume: replace any existing
+        for existing in d.iterdir():
+            if existing.name.startswith("resume"):
+                existing.unlink()
+        dest = d / f"resume{ext}"
+        dest.write_bytes(content)
+    else:
+        # LinkedIn: append as numbered file
+        existing_csvs = _linkedin_csv_files(d)
+        idx = len(existing_csvs) + 1
+        orig_stem = Path(file.filename).stem if file.filename else f"connections_{idx}"
+        dest = d / f"linkedin_{idx}_{orig_stem}.csv"
+        dest.write_bytes(content)
+        _rebuild_linkedin_summary(d)
 
     return {"message": f"Uploaded {file.filename} ({_human_size(len(content))})"}
+
+
+@app.delete("/api/topics/{name}/profile-data/linkedin/{filename}")
+def api_delete_linkedin_csv(name: str, filename: str):
+    """Delete a specific LinkedIn CSV and rebuild the summary."""
+    _topic_dir(name)
+    d = _profile_data_dir(name)
+    target = d / filename
+    if not target.exists() or not target.name.startswith("linkedin_") or target.suffix != ".csv":
+        raise HTTPException(404, "File not found")
+    target.unlink()
+    _rebuild_linkedin_summary(d)
+    return {"deleted": filename}
 
 
 # --- NewsAPI config helpers & endpoints ---

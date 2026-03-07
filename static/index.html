@@ -2105,16 +2105,17 @@ async function renderConfigure() {
           <div id="resume-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
         </div>
         <div style="margin-bottom:16px">
-          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">LinkedIn Connections (CSV export)</label>
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">LinkedIn Connections (CSV exports — upload multiple files)</label>
           <div style="display:flex;align-items:center;gap:10px">
-            <input type="file" id="linkedin-csv-file" accept=".csv" style="font-size:12px" />
-            <button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px" onclick="uploadProfileFile('linkedin_connections')">Upload CSV</button>
+            <input type="file" id="linkedin-csv-file" accept=".csv" multiple style="font-size:12px" />
+            <button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px" onclick="uploadLinkedInFiles()">Upload CSV(s)</button>
           </div>
+          <div id="linkedin-csv-list" style="margin-top:8px"></div>
           <div id="linkedin-csv-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
         </div>
         <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
           Export LinkedIn connections from <a href="https://www.linkedin.com/mypreferences/d/download-my-data" target="_blank" style="color:var(--accent)">LinkedIn Data Export</a> (select "Connections" only).
-          These files are stored per-topic and used by the agent to score networking paths and interview likelihood.
+          You can upload multiple CSV files — they will be merged automatically.
         </div>
       </div>
     </div>
@@ -2287,16 +2288,15 @@ async function saveLlmConfig(btn) {
 
 async function uploadProfileFile(fileType) {
   if (!state.selected) { alert('Select a topic first'); return; }
-  const inputId = fileType === 'resume' ? 'resume-file' : 'linkedin-csv-file';
-  const input = document.getElementById(inputId);
+  const input = document.getElementById('resume-file');
   if (!input.files.length) { alert('Select a file first'); return; }
   const formData = new FormData();
   formData.append('file', input.files[0]);
-  const statusEl = document.getElementById(fileType === 'resume' ? 'resume-status' : 'linkedin-csv-status');
+  const statusEl = document.getElementById('resume-status');
   statusEl.textContent = 'Uploading...';
   statusEl.style.color = 'var(--text2)';
   try {
-    const r = await fetch(`/api/topics/${encodeURIComponent(state.selected)}/profile-data/${fileType}`, {
+    const r = await fetch(`/api/topics/${encodeURIComponent(state.selected)}/profile-data/resume`, {
       method: 'POST', body: formData
     });
     if (!r.ok) throw new Error(await r.text());
@@ -2310,19 +2310,70 @@ async function uploadProfileFile(fileType) {
   }
 }
 
+async function uploadLinkedInFiles() {
+  if (!state.selected) { alert('Select a topic first'); return; }
+  const input = document.getElementById('linkedin-csv-file');
+  if (!input.files.length) { alert('Select file(s) first'); return; }
+  const statusEl = document.getElementById('linkedin-csv-status');
+  statusEl.textContent = `Uploading ${input.files.length} file(s)...`;
+  statusEl.style.color = 'var(--text2)';
+  let uploaded = 0;
+  for (const file of input.files) {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const r = await fetch(`/api/topics/${encodeURIComponent(state.selected)}/profile-data/linkedin_connections`, {
+        method: 'POST', body: formData
+      });
+      if (!r.ok) throw new Error(await r.text());
+      uploaded++;
+    } catch (e) {
+      statusEl.textContent = `Failed on ${file.name}: ${e.message}`;
+      statusEl.style.color = 'var(--red)';
+      return;
+    }
+  }
+  statusEl.textContent = `Uploaded ${uploaded} file(s)!`;
+  statusEl.style.color = 'var(--green)';
+  input.value = '';
+  loadProfileDataStatus();
+}
+
+async function deleteLinkedInFile(filename) {
+  if (!state.selected) return;
+  try {
+    const r = await fetch(`/api/topics/${encodeURIComponent(state.selected)}/profile-data/linkedin/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error(await r.text());
+    loadProfileDataStatus();
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
+  }
+}
+
 async function loadProfileDataStatus() {
   if (!state.selected) return;
   try {
     const res = await fetch(`/api/topics/${encodeURIComponent(state.selected)}/profile-data`).then(r => r.json());
     const el = document.getElementById('profile-data-status');
     if (el) {
-      const count = (res.resume ? 1 : 0) + (res.linkedin_connections ? 1 : 0);
-      el.innerHTML = `<span class="status-dot" style="background:${count === 2 ? 'var(--green)' : count === 1 ? 'var(--yellow)' : 'var(--red)'}"></span>${count}/2 files uploaded`;
+      const hasResume = res.resume;
+      const hasLinkedin = res.linkedin_file_count > 0;
+      const count = (hasResume ? 1 : 0) + (hasLinkedin ? 1 : 0);
+      el.innerHTML = `<span class="status-dot" style="background:${count === 2 ? 'var(--green)' : count === 1 ? 'var(--yellow)' : 'var(--red)'}"></span>${hasResume ? 'Resume' : 'No resume'}${hasLinkedin ? ` + ${res.linkedin_total_contacts} contacts (${res.linkedin_file_count} file${res.linkedin_file_count > 1 ? 's' : ''})` : ' + No LinkedIn data'}`;
     }
     const rStatus = document.getElementById('resume-status');
     if (rStatus) rStatus.textContent = res.resume ? `Uploaded (${res.resume_size})` : 'Not uploaded';
-    const lStatus = document.getElementById('linkedin-csv-status');
-    if (lStatus) lStatus.textContent = res.linkedin_connections ? `Uploaded (${res.linkedin_connections_size})` : 'Not uploaded';
+    const listEl = document.getElementById('linkedin-csv-list');
+    if (listEl && res.linkedin_files && res.linkedin_files.length > 0) {
+      listEl.innerHTML = res.linkedin_files.map(f =>
+        `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:var(--text2)">
+          <span style="flex:1">${escHtml(f.name)} (${f.size})</span>
+          <span style="color:var(--red);cursor:pointer;font-size:14px" title="Remove" onclick="deleteLinkedInFile('${escHtml(f.name)}')">&times;</span>
+        </div>`
+      ).join('') + `<div style="font-size:11px;color:var(--text2);margin-top:4px">${res.linkedin_total_contacts} total contacts</div>`;
+    } else if (listEl) {
+      listEl.innerHTML = '';
+    }
   } catch {}
 }
 

@@ -529,13 +529,23 @@ def _build_phase_guidance(config: dict, paths: dict, phase_budget_exceeded: dict
 
         if phase_filter and phase_filter.get("selected_ideas"):
             selected = phase_filter["selected_ideas"]
-            idea_names = ", ".join(
-                f"{idea['title']} (#{idea['rank']})" for idea in selected
-            )
-            lines.append(f">>> CURRENT TASK: Work on {current['name']}.")
-            lines.append(f">>> Write to: {current['target_file']}")
-            lines.append(f">>> Write playbooks ONLY for these selected ideas: {idea_names}")
-            lines.append(f">>> Skip all other ideas.")
+            is_jobs = any(item.get("item_type") == "job" for item in selected)
+            if is_jobs:
+                item_names = ", ".join(
+                    f"{item.get('company', '')} — {item['title']} (#{item['rank']})" for item in selected
+                )
+                lines.append(f">>> CURRENT TASK: Work on {current['name']}.")
+                lines.append(f">>> Write to: {current['target_file']}")
+                lines.append(f">>> Write interview playbooks ONLY for these selected jobs: {item_names}")
+                lines.append(f">>> Skip all other jobs.")
+            else:
+                idea_names = ", ".join(
+                    f"{idea['title']} (#{idea['rank']})" for idea in selected
+                )
+                lines.append(f">>> CURRENT TASK: Work on {current['name']}.")
+                lines.append(f">>> Write to: {current['target_file']}")
+                lines.append(f">>> Write playbooks ONLY for these selected ideas: {idea_names}")
+                lines.append(f">>> Skip all other ideas.")
         elif completed_phases and current_idx > 0:
             prev = phases[current_idx - 1]
             lines.append(f">>> ACTION REQUIRED: Start {current['name']} NOW.")
@@ -620,6 +630,91 @@ def _extract_ideas(research_dir: Path) -> list[dict]:
         })
     ideas.sort(key=lambda x: x["rank"])
     return ideas
+
+
+def _extract_jobs(research_dir: Path) -> list[dict]:
+    """Parse ranked_jobs.md for ## JOB entries.
+
+    Returns a list of dicts with id, rank, title, score, company,
+    location, and url fields — compatible with the selection checkpoint UI.
+    """
+    import re
+    jobs_file = research_dir / "ranked_jobs.md"
+    if not jobs_file.exists():
+        return []
+
+    content = jobs_file.read_text(encoding="utf-8")
+    lines = content.splitlines()
+
+    # Match headers like: ## JOB #1: Company — Role Title
+    # or: ## JOB 1: Company — Role Title
+    header_pattern = re.compile(
+        r'^## JOB\s*#?(\d+)\s*:\s*(.+)$',
+    )
+
+    job_starts = []
+    for i, line in enumerate(lines):
+        m = header_pattern.match(line)
+        if m:
+            job_starts.append((i, m))
+
+    jobs = []
+    for idx, (start_line, m) in enumerate(job_starts):
+        rank = int(m.group(1))
+        raw_title = m.group(2).strip()
+
+        end_line = job_starts[idx + 1][0] if idx + 1 < len(job_starts) else len(lines)
+        block = lines[start_line:end_line]
+
+        # Try to split "Company — Role Title" or "Company - Role Title"
+        company = ""
+        role_title = raw_title
+        for sep in [" — ", " - ", " – "]:
+            if sep in raw_title:
+                parts = raw_title.split(sep, 1)
+                company = parts[0].strip()
+                role_title = parts[1].strip()
+                break
+
+        # Extract score, location, URL from block lines
+        combined_score = ""
+        location = ""
+        url = ""
+        for bl in block[1:8]:
+            bl_stripped = bl.strip()
+            if not combined_score:
+                sm = re.search(r'Combined\s*Score[:\s]*([0-9.]+)', bl_stripped, re.IGNORECASE)
+                if sm:
+                    combined_score = sm.group(1)
+            if not location:
+                lm = re.search(r'Location[:\s]*(.+)', bl_stripped, re.IGNORECASE)
+                if lm:
+                    location = lm.group(1).strip().rstrip('*').strip()
+            if not url:
+                um = re.search(r'(https?://\S+)', bl_stripped)
+                if um:
+                    url = um.group(1)
+
+        jobs.append({
+            "id": f"job_{rank}",
+            "rank": rank,
+            "title": role_title,
+            "score": combined_score,
+            "company": company,
+            "location": location,
+            "url": url,
+            "item_type": "job",
+        })
+    jobs.sort(key=lambda x: x["rank"])
+    return jobs
+
+
+def _extract_checkpoint_items(research_dir: Path) -> list[dict]:
+    """Extract items for selection checkpoint — tries ideas first, then jobs."""
+    items = _extract_ideas(research_dir)
+    if items:
+        return items
+    return _extract_jobs(research_dir)
 
 
 def _extract_section(block: list[str], heading_prefix: str) -> str:
@@ -1981,8 +2076,8 @@ def run_topic(topic_name, cycles, delay):
                         except Exception:
                             pass
                     if needs_checkpoint:
-                        # Try to extract ideas and create the checkpoint now
-                        ideas = _extract_ideas(paths["research_dir"])
+                        # Try to extract ideas/jobs and create the checkpoint now
+                        ideas = _extract_checkpoint_items(paths["research_dir"])
                         if ideas:
                             cp_file = paths["data_dir"] / "checkpoints.json"
                             cp_data = {}
@@ -2040,7 +2135,7 @@ def run_topic(topic_name, cycles, delay):
             completed_bucket = buckets[prev_phase_idx]
             if completed_bucket.get("selection_checkpoint"):
                 research_dir = paths["research_dir"]
-                ideas = _extract_ideas(research_dir)
+                ideas = _extract_checkpoint_items(research_dir)
                 if ideas:
                     # Save to checkpoints.json
                     cp_file = paths["data_dir"] / "checkpoints.json"
@@ -2062,7 +2157,7 @@ def run_topic(topic_name, cycles, delay):
                     log_cycle({
                         "cycle": result.get("cycle", cycle_count),
                         "action": "selection_checkpoint",
-                        "summary": f"Selection checkpoint after {completed_bucket['name']}: {len(ideas)} ideas extracted",
+                        "summary": f"Selection checkpoint after {completed_bucket['name']}: {len(ideas)} items extracted",
                         "applied": False,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "cost_after": get_total_usd(paths["costs_file"]),
@@ -2070,8 +2165,8 @@ def run_topic(topic_name, cycles, delay):
 
                     click.echo(f"\n{'='*60}")
                     click.echo(f"SELECTION CHECKPOINT: {completed_bucket['name']} complete")
-                    click.echo(f"  {len(ideas)} ideas extracted. Select which ideas to write playbooks for.")
-                    click.echo(f"  Use the dashboard to pick ideas, then restart.")
+                    click.echo(f"  {len(ideas)} items extracted. Select which to include in the playbook.")
+                    click.echo(f"  Use the dashboard to make your selection, then restart.")
                     click.echo(f"{'='*60}\n")
                     break
 

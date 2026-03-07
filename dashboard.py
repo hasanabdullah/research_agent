@@ -284,13 +284,13 @@ def _topic_summary(name: str, active_topic: str) -> dict:
         # Selection checkpoint
         sc = cp_data.get("selection_checkpoint")
         if sc and not running:
-            # Check if Phase 5 already ran by looking for execution_playbook cycles
+            # Check if the final phase already ran by looking for playbook references in cycles
             phase5_ran = False
             cycles_file = paths.get("cycles_file")
             if cycles_file and cycles_file.exists():
                 try:
                     ctext = cycles_file.read_text(encoding="utf-8")
-                    phase5_ran = "execution_playbook" in ctext
+                    phase5_ran = "execution_playbook" in ctext or "application_playbook" in ctext
                 except Exception:
                     pass
             selection_checkpoint = {
@@ -1348,7 +1348,8 @@ def api_agents_status():
                 cycles_f = d / "data" / "cycles.jsonl"
                 if cycles_f.exists():
                     try:
-                        phase5_ran = "execution_playbook" in cycles_f.read_text(encoding="utf-8")
+                        ctext = cycles_f.read_text(encoding="utf-8")
+                        phase5_ran = "execution_playbook" in ctext or "application_playbook" in ctext
                     except Exception:
                         pass
                 selection_checkpoint = {

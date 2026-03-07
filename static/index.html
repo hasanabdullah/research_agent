@@ -559,7 +559,25 @@ async function showSelectionModal(topic) {
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
-  const ideaRows = data.ideas.map(idea => `
+  const isJobType = data.ideas.length > 0 && data.ideas[0].item_type === 'job';
+  const itemLabel = isJobType ? 'jobs' : 'ideas';
+  const ideaRows = data.ideas.map(idea => {
+    if (isJobType) {
+      return `
+    <label style="display:flex;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all 0.15s ease;align-items:flex-start" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='transparent'">
+      <input type="checkbox" class="sel-idea-cb" value="${escHtml(idea.id)}" checked style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;margin-top:2px;flex-shrink:0">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-weight:600;color:var(--text2)">#${idea.rank}</span>
+          <span style="font-weight:600;flex:1">${escHtml(idea.title)}</span>
+          ${idea.score ? '<span style="font-size:11px;color:#fff;background:var(--accent);border-radius:4px;padding:1px 6px;flex-shrink:0">Score: ' + escHtml(idea.score) + '</span>' : ''}
+        </div>
+        ${idea.company ? '<div style="font-size:12px;color:var(--accent);margin-bottom:4px;font-weight:500">' + escHtml(idea.company) + '</div>' : ''}
+        ${idea.location ? '<div style="font-size:11px;color:var(--text2);margin-bottom:3px">' + escHtml(idea.location) + '</div>' : ''}
+      </div>
+    </label>`;
+    } else {
+      return `
     <label style="display:flex;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all 0.15s ease;align-items:flex-start" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='transparent'">
       <input type="checkbox" class="sel-idea-cb" value="${escHtml(idea.id)}" checked style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;margin-top:2px;flex-shrink:0">
       <div style="flex:1;min-width:0">
@@ -572,8 +590,9 @@ async function showSelectionModal(topic) {
         ${idea.what_it_is ? '<div style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:3px"><b>Idea:</b> ' + escHtml(idea.what_it_is) + '</div>' : ''}
         ${idea.problem ? '<div style="font-size:12px;color:var(--text2);line-height:1.4"><b>Problem:</b> ' + escHtml(idea.problem) + '</div>' : ''}
       </div>
-    </label>
-  `).join('');
+    </label>`;
+    }
+  }).join('');
 
   overlay.innerHTML = `
     <div class="modal" style="width:540px;max-height:80vh;display:flex;flex-direction:column">
@@ -583,7 +602,7 @@ async function showSelectionModal(topic) {
         </span>
         <div>
           <h2 style="margin:0;font-size:17px">${escHtml(data.phase)} Complete</h2>
-          <div style="font-size:12px;color:var(--text2);margin-top:2px">Select ideas for Execution Playbook</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Select ${itemLabel} for Interview Playbook</div>
         </div>
       </div>
       <div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;margin-bottom:16px;padding-right:4px">
@@ -731,8 +750,9 @@ function renderAgentControl() {
     `;
   } else if (t.selection_checkpoint) {
     const p5 = t.selection_checkpoint.phase5_ran;
-    const badge = p5 ? 'Phase 5 Complete' : 'Phase 4 Complete';
-    const btnText = p5 ? 'Reselect Ideas for Phase 5 Re-run' : 'Select Ideas for Phase 5';
+    const phaseName = t.selection_checkpoint.phase || 'Selection Phase';
+    const badge = p5 ? 'Playbook Complete' : phaseName + ' Complete';
+    const btnText = p5 ? 'Reselect for Playbook Re-run' : 'Select for Interview Playbook';
     el.innerHTML = `
       <span style="font-size:11px;background:var(--accent);color:#fff;border-radius:6px;padding:3px 8px;font-weight:600">${badge}</span>
       <button style="font-size:11px;background:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="showSelectionModal(state.topics.find(t=>t.name==='${n}'))">${btnText}</button>

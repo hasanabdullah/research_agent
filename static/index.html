@@ -2091,6 +2091,34 @@ async function renderConfigure() {
       </div>
     </div>
     <div class="config-section">
+      <div class="config-section-header" onclick="toggleConfigSection('profile-data')">
+        <h3><span class="arrow ${_openConfigSections.has('profile-data') ? 'open' : ''}" id="cfg-arrow-profile-data">&#9654;</span> Profile Data</h3>
+        <span class="config-section-meta" id="profile-data-status"></span>
+      </div>
+      <div class="config-section-body ${_openConfigSections.has('profile-data') ? 'open' : ''}" id="cfg-body-profile-data">
+        <div style="margin-bottom:16px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">Resume (PDF, TXT, or MD)</label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="file" id="resume-file" accept=".pdf,.txt,.md" style="font-size:12px" />
+            <button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px" onclick="uploadProfileFile('resume')">Upload Resume</button>
+          </div>
+          <div id="resume-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
+        </div>
+        <div style="margin-bottom:16px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">LinkedIn Connections (CSV export)</label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="file" id="linkedin-csv-file" accept=".csv" style="font-size:12px" />
+            <button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px" onclick="uploadProfileFile('linkedin_connections')">Upload CSV</button>
+          </div>
+          <div id="linkedin-csv-status" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
+        </div>
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
+          Export LinkedIn connections from <a href="https://www.linkedin.com/mypreferences/d/download-my-data" target="_blank" style="color:var(--accent)">LinkedIn Data Export</a> (select "Connections" only).
+          These files are stored per-topic and used by the agent to score networking paths and interview likelihood.
+        </div>
+      </div>
+    </div>
+    <div class="config-section">
       <div class="config-section-header" onclick="toggleConfigSection('reddit')">
         <h3><span class="arrow ${_openConfigSections.has('reddit') ? 'open' : ''}" id="cfg-arrow-reddit">&#9654;</span> Reddit API</h3>
         <span class="config-section-meta"><span class="status-dot" style="background:${redditCfg.configured ? 'var(--green)' : 'var(--red)'}"></span>${redditCfg.configured ? 'Configured' : 'Not configured'}</span>
@@ -2163,6 +2191,7 @@ async function renderConfigure() {
   }
 
   el.innerHTML = html;
+  loadProfileDataStatus();
 }
 
 async function saveNotionConfig(btn) {
@@ -2254,6 +2283,47 @@ async function saveLlmConfig(btn) {
   } catch (e) {
     alert('Failed to save: ' + e.message);
   }
+}
+
+async function uploadProfileFile(fileType) {
+  if (!state.selected) { alert('Select a topic first'); return; }
+  const inputId = fileType === 'resume' ? 'resume-file' : 'linkedin-csv-file';
+  const input = document.getElementById(inputId);
+  if (!input.files.length) { alert('Select a file first'); return; }
+  const formData = new FormData();
+  formData.append('file', input.files[0]);
+  const statusEl = document.getElementById(fileType === 'resume' ? 'resume-status' : 'linkedin-csv-status');
+  statusEl.textContent = 'Uploading...';
+  statusEl.style.color = 'var(--text2)';
+  try {
+    const r = await fetch(`/api/topics/${encodeURIComponent(state.selected)}/profile-data/${fileType}`, {
+      method: 'POST', body: formData
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    statusEl.textContent = res.message || 'Uploaded!';
+    statusEl.style.color = 'var(--green)';
+    loadProfileDataStatus();
+  } catch (e) {
+    statusEl.textContent = 'Upload failed: ' + e.message;
+    statusEl.style.color = 'var(--red)';
+  }
+}
+
+async function loadProfileDataStatus() {
+  if (!state.selected) return;
+  try {
+    const res = await fetch(`/api/topics/${encodeURIComponent(state.selected)}/profile-data`).then(r => r.json());
+    const el = document.getElementById('profile-data-status');
+    if (el) {
+      const count = (res.resume ? 1 : 0) + (res.linkedin_connections ? 1 : 0);
+      el.innerHTML = `<span class="status-dot" style="background:${count === 2 ? 'var(--green)' : count === 1 ? 'var(--yellow)' : 'var(--red)'}"></span>${count}/2 files uploaded`;
+    }
+    const rStatus = document.getElementById('resume-status');
+    if (rStatus) rStatus.textContent = res.resume ? `Uploaded (${res.resume_size})` : 'Not uploaded';
+    const lStatus = document.getElementById('linkedin-csv-status');
+    if (lStatus) lStatus.textContent = res.linkedin_connections ? `Uploaded (${res.linkedin_connections_size})` : 'Not uploaded';
+  } catch {}
 }
 
 async function saveRedditConfig(btn) {

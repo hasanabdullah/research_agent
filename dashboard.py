@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 import requests as http_requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
@@ -2444,6 +2444,100 @@ def api_put_reddit_config(body: RedditConfig):
     }
     _save_reddit_config(reddit_cfg)
     return {"status": "saved"}
+
+
+# --- Profile data upload (resume + LinkedIn CSV) ---
+
+
+def _profile_data_dir(name: str) -> Path:
+    """Return the profile_data directory for a topic, creating it if needed."""
+    d = ROOT / "topics" / name / "data" / "profile_data"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _human_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+@app.get("/api/topics/{name}/profile-data")
+def api_get_profile_data(name: str):
+    """Return which profile data files exist for this topic."""
+    _topic_dir(name)
+    d = ROOT / "topics" / name / "data" / "profile_data"
+    resume_exists = False
+    resume_size = ""
+    linkedin_exists = False
+    linkedin_size = ""
+    if d.exists():
+        for f in d.iterdir():
+            if f.name.startswith("resume"):
+                resume_exists = True
+                resume_size = _human_size(f.stat().st_size)
+            elif f.name.startswith("linkedin_connections"):
+                linkedin_exists = True
+                linkedin_size = _human_size(f.stat().st_size)
+    return {
+        "resume": resume_exists,
+        "resume_size": resume_size,
+        "linkedin_connections": linkedin_exists,
+        "linkedin_connections_size": linkedin_size,
+    }
+
+
+@app.post("/api/topics/{name}/profile-data/{file_type}")
+async def api_upload_profile_data(name: str, file_type: str, file: UploadFile):
+    """Upload resume or LinkedIn connections CSV to topic's profile_data dir."""
+    _topic_dir(name)
+    if file_type not in ("resume", "linkedin_connections"):
+        raise HTTPException(400, f"Invalid file_type: {file_type}")
+
+    d = _profile_data_dir(name)
+
+    # Remove any existing file of this type
+    for existing in d.iterdir():
+        if existing.name.startswith(file_type):
+            existing.unlink()
+
+    # Determine extension from uploaded filename
+    ext = Path(file.filename).suffix if file.filename else ".txt"
+    dest = d / f"{file_type}{ext}"
+    content = await file.read()
+    dest.write_bytes(content)
+
+    # For LinkedIn CSV, also create a summary text file the agent can read more easily
+    if file_type == "linkedin_connections" and ext.lower() == ".csv":
+        try:
+            import csv
+            import io
+            text = content.decode("utf-8", errors="replace")
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+            summary_lines = [f"# LinkedIn Connections Summary ({len(rows)} total)\n"]
+            for row in rows:
+                parts = []
+                fn = row.get("First Name", "")
+                ln = row.get("Last Name", "")
+                if fn or ln:
+                    parts.append(f"{fn} {ln}".strip())
+                company = row.get("Company", "")
+                if company:
+                    parts.append(f"@ {company}")
+                position = row.get("Position", "")
+                if position:
+                    parts.append(f"({position})")
+                if parts:
+                    summary_lines.append(" ".join(parts))
+            summary_path = d / "linkedin_connections_summary.txt"
+            summary_path.write_text("\n".join(summary_lines), encoding="utf-8")
+        except Exception:
+            pass  # summary is best-effort
+
+    return {"message": f"Uploaded {file.filename} ({_human_size(len(content))})"}
 
 
 # --- NewsAPI config helpers & endpoints ---

@@ -46,6 +46,7 @@ except ImportError:
     _EdgarCompany = None
     _EDGAR_AVAILABLE = False
 
+
 ROOT = Path(__file__).parent
 
 # Configurable paths — overridden per-topic by set_paths()
@@ -646,6 +647,7 @@ _NEWSAPI_TOOL_DEFINITION = {
         },
     },
 }
+
 
 
 def _newsapi_configured() -> bool:

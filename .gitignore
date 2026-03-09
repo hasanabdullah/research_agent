@@ -1,11 +1,29 @@
+# Secrets & credentials
 .env
 config.yaml
+*.key
+*.pem
+
+# Personal data — never commit
+**/resume*
+**/linkedin*
+**/profile_data/
+
+# Research output
+topics/
+data/research/
+data/pending_patches/
+
+# Build artifacts
 __pycache__/
 *.pyc
 *.egg-info/
 dist/
 build/
 .venv/
-topics/
-data/research/
+
+# Misc
 MISSION.md
+screenshot_*.png
+agent.log
+agent_output.log

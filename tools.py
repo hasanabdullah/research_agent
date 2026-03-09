@@ -67,11 +67,21 @@ def set_paths(data_dir: Path, patches_dir: Path, research_dir: Path = None):
 
 
 def _resolve_file_path(path: str) -> Path:
-    """Resolve a relative path, remapping data/research/ to the active topic's research dir."""
+    """Resolve a relative path, remapping data/ subdirs to the active topic's data dir."""
     # If the path targets research files, use the topic-specific research dir
     if path.startswith("data/research/"):
         filename = path[len("data/research/"):]
         return _paths["research_dir"] / filename
+    # If the path targets data/ subdirs (e.g. data/profile_data/), resolve
+    # relative to the active topic's data dir so agent can find topic-specific
+    # profile files instead of looking in the deepshika root.
+    if path.startswith("data/"):
+        topic_data = _paths["data_dir"]
+        relative = path[len("data/"):]
+        resolved = topic_data / relative
+        if resolved.exists():
+            return resolved
+        # Fall through to ROOT if not found in topic dir
     return ROOT / path
 
 
@@ -823,6 +833,21 @@ def handle_append_to_file(path: str, content: str, reasoning: str) -> str:
             except Exception:
                 pass
 
+    # --- Duplicate heading detection ---
+    # Extract top-level headings (## Foo) from the new content and check if
+    # they already appear in the existing file.  This prevents the agent from
+    # appending the same company/role entry multiple times.
+    import re as _re
+    new_headings = _re.findall(r"^## (.+)", content, _re.MULTILINE)
+    if new_headings and existing:
+        dupes = [h for h in new_headings if _re.search(r"^## " + _re.escape(h) + r"\s*$", existing, _re.MULTILINE)]
+        if dupes:
+            return (
+                f"DUPLICATE DETECTED: The following sections already exist in {path}: "
+                + ", ".join(dupes)
+                + ". Use propose_edit to update existing sections instead of appending."
+            )
+
     # Ensure separator between existing and new content
     separator = "\n\n" if existing and not existing.endswith("\n\n") else "\n" if existing and not existing.endswith("\n") else ""
     new_full = existing + separator + content
@@ -895,7 +920,16 @@ def handle_reflect(observation: str) -> str:
 
 _web_search_count = 0  # per-cycle counter, reset in dispatch_tool wrapper
 _web_fetch_count = 0
-_WEB_CALLS_PER_CYCLE = 3
+_WEB_CALLS_PER_CYCLE_DEFAULT = 3
+
+
+def _get_web_calls_limit() -> int:
+    """Return per-cycle web call limit, configurable via config.yaml."""
+    try:
+        cfg = _load_config()
+        return int(cfg.get("web_calls_per_cycle", _WEB_CALLS_PER_CYCLE_DEFAULT))
+    except Exception:
+        return _WEB_CALLS_PER_CYCLE_DEFAULT
 
 
 def reset_web_counters():
@@ -909,8 +943,9 @@ def handle_web_search(query: str, max_results: int = 5) -> str:
     """Search the web via DuckDuckGo. Returns formatted results."""
     global _web_search_count
     _web_search_count += 1
-    if _web_search_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web searches per cycle. Save remaining searches for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_search_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web searches per cycle. Save remaining searches for next cycle."
 
     max_results = min(int(max_results), 10)
 
@@ -947,8 +982,9 @@ def handle_web_fetch(url: str, max_chars: int = 8000) -> str:
     """Fetch a URL and return cleaned text content."""
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_chars = min(int(max_chars), 15000)
 
@@ -1006,8 +1042,9 @@ def handle_youtube_transcript(video: str, keywords: list[str] | None = None, inc
 
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     video_id = _extract_video_id(video)
     if not video_id:
@@ -1099,8 +1136,9 @@ def handle_reddit_search(
 
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_posts = min(int(max_posts), 10)
     sort = sort if sort in ("relevance", "hot", "top", "new") else "relevance"
@@ -1209,8 +1247,9 @@ def handle_hackernews_search(
 
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_results = min(int(max_results), 10)
     tags = tags if tags in ("story", "comment", "show_hn", "ask_hn") else "story"
@@ -1321,8 +1360,9 @@ def handle_google_trends(
 
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     keywords = keywords[:5]  # Google Trends max 5
 
@@ -1427,8 +1467,9 @@ def handle_startup_news(
 
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_results = min(int(max_results), 10)
     sort_by = sort_by if sort_by in ("relevancy", "publishedAt", "popularity") else "relevancy"
@@ -1525,8 +1566,9 @@ def handle_stackexchange_search(
 
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_results = min(int(max_results), 10)
     sort = sort if sort in ("relevance", "votes", "creation", "activity") else "relevance"
@@ -1622,8 +1664,9 @@ def handle_github_search(
 
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_results = min(int(max_results), 10)
     sort = sort if sort in ("stars", "forks", "updated", "best-match") else "stars"
@@ -1728,8 +1771,9 @@ def handle_patent_search(
 
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_results = min(int(max_results), 10)
     kw_lower = [k.lower() for k in keywords]
@@ -1835,8 +1879,9 @@ def handle_wikipedia_search(
 
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_results = min(int(max_results), 10)
     kw_lower = [k.lower() for k in keywords]
@@ -2075,8 +2120,9 @@ def handle_sec_filings(
 
         global _web_fetch_count
         _web_fetch_count += 1
-        if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-            return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+        _limit = _get_web_calls_limit()
+        if _web_fetch_count > _limit:
+            return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
         time.sleep(1)
         return _extract_sec_section(query, filing_type, section)
@@ -2086,8 +2132,9 @@ def handle_sec_filings(
         return "ERROR: keywords parameter is required in search mode. Provide relevant terms to filter SEC filings."
 
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_results = min(int(max_results), 10)
     filing_type = filing_type if filing_type in ("10-K", "10-Q", "S-1", "8-K") else "10-K"
@@ -2267,8 +2314,9 @@ def handle_adzuna_search(
     """Search Adzuna for job listings. Requires ADZUNA_APP_ID and ADZUNA_APP_KEY env vars."""
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     cfg = _load_config()
     adzuna_cfg = cfg.get("adzuna", {}) or {}
@@ -2305,7 +2353,10 @@ def handle_adzuna_search(
         if not results:
             return f"No Adzuna results for: {query}"
 
-        parts = [f"Adzuna job search: '{query}' — {len(results)} results (of {data.get('count', '?')} total)\n"]
+        parts = [
+            f"Adzuna job search: '{query}' — {len(results)} results (of {data.get('count', '?')} total)\n"
+            "⚠ NOTE: Adzuna salary figures may represent estimated total compensation (base + bonus + equity), not base salary alone. Cross-reference with levels.fyi or Glassdoor before using as base salary.\n"
+        ]
 
         for i, job in enumerate(results, 1):
             title = job.get("title", "N/A")
@@ -2393,8 +2444,9 @@ def handle_muse_search(
     """Search The Muse for curated job listings. No API key required."""
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_results = min(int(max_results), 20)
     params = {"page": 1}
@@ -2493,8 +2545,9 @@ def handle_remotive_search(
     """Search Remotive for remote jobs. No API key required."""
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     max_results = min(int(max_results), 20)
     params = {}
@@ -2598,8 +2651,9 @@ def handle_hunter_search(
     """Search Hunter.io for email contacts at a domain. Requires HUNTER_API_KEY env var."""
     global _web_fetch_count
     _web_fetch_count += 1
-    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
-        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+    _limit = _get_web_calls_limit()
+    if _web_fetch_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web fetches per cycle. Save remaining for next cycle."
 
     cfg = _load_config()
     hunter_cfg = cfg.get("hunter", {}) or {}

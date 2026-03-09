@@ -1928,11 +1928,13 @@ async function renderConfigure() {
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
 
   // Fetch all configs in parallel
-  const [llmCfg, redditCfg, newsapiCfg, notionCfg] = await Promise.all([
+  const [llmCfg, redditCfg, newsapiCfg, notionCfg, adzunaCfg, hunterCfg] = await Promise.all([
     fetch('/api/llm/config').then(r => r.json()).catch(() => ({ provider: '', api_key_set: false, api_key_masked: '' })),
     fetch('/api/reddit/config').then(r => r.json()).catch(() => ({ client_id: '', configured: false, client_secret_masked: '' })),
     fetch('/api/newsapi/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' })),
-    fetch('/api/notion/config').then(r => r.json()).catch(() => ({ token_set: false, root_page_id: '', hub_database_id: '', token_masked: '' }))
+    fetch('/api/notion/config').then(r => r.json()).catch(() => ({ token_set: false, root_page_id: '', hub_database_id: '', token_masked: '' })),
+    fetch('/api/adzuna/config').then(r => r.json()).catch(() => ({ configured: false, app_id_masked: '', app_key_masked: '' })),
+    fetch('/api/hunter/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' }))
   ]);
 
   const tab = _configSubTab;
@@ -2025,7 +2027,8 @@ async function renderConfigure() {
     const isVertex = curProvider === 'vertex';
     const isGemini = curProvider === 'gemini';
     const showApiKey = !isVertex;
-    const llmMeta = llmCfg.api_key_set ? (providerLabels[curProvider] || curProvider || 'Set') : 'Not configured';
+    const llmConfigured = isVertex ? !!llmCfg.vertex_project : llmCfg.api_key_set;
+    const llmMeta = llmConfigured ? (providerLabels[curProvider] || curProvider || 'Set') : 'Not configured';
 
     const providerModels = {
       gemini: [
@@ -2065,7 +2068,7 @@ async function renderConfigure() {
     <div class="config-section">
       <div class="config-section-header" onclick="toggleConfigSection('llm')">
         <h3><span class="arrow ${_openConfigSections.has('llm') ? 'open' : ''}" id="cfg-arrow-llm">&#9654;</span> LLM Configuration</h3>
-        <span class="config-section-meta"><span class="status-dot" style="background:${llmCfg.api_key_set ? 'var(--green)' : 'var(--red)'}"></span>${escHtml(llmMeta)}</span>
+        <span class="config-section-meta"><span class="status-dot" style="background:${llmConfigured ? 'var(--green)' : 'var(--red)'}"></span>${escHtml(llmMeta)}</span>
       </div>
       <div class="config-section-body ${_openConfigSections.has('llm') ? 'open' : ''}" id="cfg-body-llm">
         <div style="margin-bottom:8px">
@@ -2144,6 +2147,42 @@ async function renderConfigure() {
           Get a free API key at <a href="https://newsapi.org/register" target="_blank" style="color:var(--accent)">newsapi.org/register</a> (100 requests/day)
         </div>
         <button class="save-btn" id="newsapi-config-btn" onclick="saveNewsapiConfig(this)">Save NewsAPI Config</button>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-header" onclick="toggleConfigSection('adzuna')">
+        <h3><span class="arrow ${_openConfigSections.has('adzuna') ? 'open' : ''}" id="cfg-arrow-adzuna">&#9654;</span> Adzuna</h3>
+        <span class="config-section-meta"><span class="status-dot" style="background:${adzunaCfg.configured ? 'var(--green)' : 'var(--red)'}"></span>${adzunaCfg.configured ? 'Configured' : 'Not configured'}</span>
+      </div>
+      <div class="config-section-body ${_openConfigSections.has('adzuna') ? 'open' : ''}" id="cfg-body-adzuna">
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">App ID</label>
+          <input type="password" id="adzuna-app-id" placeholder="${adzunaCfg.app_id_masked || 'Enter Adzuna App ID...'}" />
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">App Key</label>
+          <input type="password" id="adzuna-app-key" placeholder="${adzunaCfg.app_key_masked || 'Enter Adzuna App Key...'}" />
+        </div>
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
+          Get free API credentials at <a href="https://developer.adzuna.com/" target="_blank" style="color:var(--accent)">developer.adzuna.com</a> (250 requests/day)
+        </div>
+        <button class="save-btn" id="adzuna-config-btn" onclick="saveAdzunaConfig(this)">Save Adzuna Config</button>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-header" onclick="toggleConfigSection('hunter')">
+        <h3><span class="arrow ${_openConfigSections.has('hunter') ? 'open' : ''}" id="cfg-arrow-hunter">&#9654;</span> Hunter.io</h3>
+        <span class="config-section-meta"><span class="status-dot" style="background:${hunterCfg.configured ? 'var(--green)' : 'var(--red)'}"></span>${hunterCfg.configured ? 'Configured' : 'Not configured'}</span>
+      </div>
+      <div class="config-section-body ${_openConfigSections.has('hunter') ? 'open' : ''}" id="cfg-body-hunter">
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Key</label>
+          <input type="password" id="hunter-api-key" placeholder="${hunterCfg.api_key_masked || 'Enter Hunter.io API key...'}" />
+        </div>
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
+          Get a free API key at <a href="https://hunter.io/users/sign_up" target="_blank" style="color:var(--accent)">hunter.io</a> (25 searches/month)
+        </div>
+        <button class="save-btn" id="hunter-config-btn" onclick="saveHunterConfig(this)">Save Hunter Config</button>
       </div>
     </div>`;
 
@@ -2447,6 +2486,44 @@ async function saveNewsapiConfig(btn) {
     });
     btn.textContent = 'Saved!'; btn.classList.add('saved');
     setTimeout(() => { btn.textContent = 'Save NewsAPI Config'; btn.classList.remove('saved'); }, 1500);
+    renderConfigure();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+async function saveAdzunaConfig(btn) {
+  const appId = document.getElementById('adzuna-app-id').value;
+  const appKey = document.getElementById('adzuna-app-key').value;
+  const body = {};
+  if (appId) body.app_id = appId;
+  if (appKey) body.app_key = appKey;
+  try {
+    await fetch('/api/adzuna/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    btn.textContent = 'Saved!'; btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'Save Adzuna Config'; btn.classList.remove('saved'); }, 1500);
+    renderConfigure();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+async function saveHunterConfig(btn) {
+  const apiKey = document.getElementById('hunter-api-key').value;
+  const body = {};
+  if (apiKey) body.api_key = apiKey;
+  try {
+    await fetch('/api/hunter/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    btn.textContent = 'Saved!'; btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'Save Hunter Config'; btn.classList.remove('saved'); }, 1500);
     renderConfigure();
   } catch (e) {
     alert('Failed to save: ' + e.message);

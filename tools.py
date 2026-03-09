@@ -671,6 +671,21 @@ def _reddit_credentials_configured() -> bool:
     return bool(client_id and client_secret)
 
 
+def _adzuna_configured() -> bool:
+    cfg = _load_config()
+    adzuna = cfg.get("adzuna", {}) or {}
+    app_id = adzuna.get("app_id", "") or os.environ.get("ADZUNA_APP_ID", "")
+    app_key = adzuna.get("app_key", "") or os.environ.get("ADZUNA_APP_KEY", "")
+    return bool(app_id and app_key)
+
+
+def _hunter_configured() -> bool:
+    cfg = _load_config()
+    hunter = cfg.get("hunter", {}) or {}
+    api_key = hunter.get("api_key", "") or os.environ.get("HUNTER_API_KEY", "")
+    return bool(api_key)
+
+
 def get_active_tools() -> list[dict]:
     """Return tool definitions, including credential-gated tools only when configured."""
     tools = list(TOOL_DEFINITIONS)
@@ -678,6 +693,14 @@ def get_active_tools() -> list[dict]:
         tools.append(_REDDIT_TOOL_DEFINITION)
     if _newsapi_configured():
         tools.append(_NEWSAPI_TOOL_DEFINITION)
+    # Job search tools — Muse & Remotive are always available (no key needed)
+    tools.append(_MUSE_TOOL_DEFINITION)
+    tools.append(_REMOTIVE_TOOL_DEFINITION)
+    # Adzuna & Hunter require API keys
+    if _adzuna_configured():
+        tools.append(_ADZUNA_TOOL_DEFINITION)
+    if _hunter_configured():
+        tools.append(_HUNTER_TOOL_DEFINITION)
     return tools
 
 
@@ -2188,6 +2211,456 @@ def handle_sec_filings(
         return f"ERROR searching SEC filings: {e}"
 
 
+# --- Job search API tools (Adzuna, The Muse, Remotive, Hunter.io) ---
+
+_ADZUNA_BASE_URL = "https://api.adzuna.com/v1/api/jobs"
+
+_ADZUNA_TOOL_DEFINITION = {
+    "type": "function",
+    "function": {
+        "name": "adzuna_search",
+        "description": (
+            "Search Adzuna job board API for structured job listings with salary data. "
+            "Returns job titles, companies, locations, salary estimates, and direct URLs. "
+            "Free tier: 250 requests/day. Great for bulk job sourcing and salary validation. "
+            "Supports filtering by title, salary range, and location. "
+            "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Job search query (e.g. 'Director of Product AI', 'Senior Product Manager')",
+                },
+                "location": {
+                    "type": "string",
+                    "description": "Location to search in (e.g. 'San Francisco', 'New York', 'Remote'). Omit for all US.",
+                },
+                "salary_min": {
+                    "type": "integer",
+                    "description": "Minimum annual salary filter in USD (e.g. 250000)",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Max jobs to return (default 10, max 20)",
+                },
+                "sort_by": {
+                    "type": "string",
+                    "enum": ["relevance", "salary", "date"],
+                    "description": "Sort order (default 'relevance'). Use 'salary' for highest-paying first.",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
+def handle_adzuna_search(
+    query: str,
+    location: str = "",
+    salary_min: int = 0,
+    max_results: int = 10,
+    sort_by: str = "relevance",
+) -> str:
+    """Search Adzuna for job listings. Requires ADZUNA_APP_ID and ADZUNA_APP_KEY env vars."""
+    global _web_fetch_count
+    _web_fetch_count += 1
+    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+    cfg = _load_config()
+    adzuna_cfg = cfg.get("adzuna", {}) or {}
+    app_id = adzuna_cfg.get("app_id", "") or os.environ.get("ADZUNA_APP_ID", "")
+    app_key = adzuna_cfg.get("app_key", "") or os.environ.get("ADZUNA_APP_KEY", "")
+    if not app_id or not app_key:
+        return "ERROR: Adzuna credentials required. Configure in the dashboard API Keys tab or set ADZUNA_APP_ID and ADZUNA_APP_KEY env vars. Sign up free at https://developer.adzuna.com/"
+
+    max_results = min(int(max_results), 20)
+    sort_map = {"relevance": "relevance", "salary": "salary", "date": "date"}
+    sort_param = sort_map.get(sort_by, "relevance")
+
+    params = {
+        "app_id": app_id,
+        "app_key": app_key,
+        "results_per_page": max_results,
+        "what": query,
+        "content-type": "application/json",
+        "sort_by": sort_param,
+    }
+    if location:
+        params["where"] = location
+    if salary_min > 0:
+        params["salary_min"] = salary_min
+
+    try:
+        time.sleep(1)
+        url = f"{_ADZUNA_BASE_URL}/us/search/1"
+        resp = requests.get(url, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("results", [])
+
+        if not results:
+            return f"No Adzuna results for: {query}"
+
+        parts = [f"Adzuna job search: '{query}' — {len(results)} results (of {data.get('count', '?')} total)\n"]
+
+        for i, job in enumerate(results, 1):
+            title = job.get("title", "N/A")
+            company = job.get("company", {}).get("display_name", "N/A")
+            loc = job.get("location", {}).get("display_name", "N/A")
+            salary_min_val = job.get("salary_min", "")
+            salary_max_val = job.get("salary_max", "")
+            salary_str = "N/A"
+            if salary_min_val and salary_max_val:
+                salary_str = f"${int(salary_min_val):,} - ${int(salary_max_val):,}"
+            elif salary_min_val:
+                salary_str = f"${int(salary_min_val):,}+"
+            created = job.get("created", "N/A")[:10]
+            redirect_url = job.get("redirect_url", "N/A")
+            description = job.get("description", "")
+            if len(description) > 300:
+                description = description[:300] + "..."
+
+            entry = (
+                f"\n--- Job {i} ---\n"
+                f"Title: {title}\n"
+                f"Company: {company}\n"
+                f"Location: {loc}\n"
+                f"Salary: {salary_str}\n"
+                f"Posted: {created}\n"
+                f"URL: {redirect_url}\n"
+                f"Description: {description}\n"
+            )
+            parts.append(entry)
+
+        output = "\n".join(parts)
+        if len(output) > 10000:
+            output = output[:10000] + "\n\n[... truncated at 10000 chars]"
+        return output
+
+    except Exception as e:
+        return f"ERROR searching Adzuna: {e}"
+
+
+_MUSE_BASE_URL = "https://www.themuse.com/api/public/jobs"
+
+_MUSE_TOOL_DEFINITION = {
+    "type": "function",
+    "function": {
+        "name": "muse_search",
+        "description": (
+            "Search The Muse for curated tech company job listings and company profiles. "
+            "Free API, no key required. Returns job titles, companies, locations, and descriptions. "
+            "Good for discovering product roles at well-known tech companies with culture details. "
+            "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Job category filter (e.g. 'Product', 'Data and Analytics', 'Project and Program Management')",
+                },
+                "level": {
+                    "type": "string",
+                    "enum": ["Entry Level", "Mid Level", "Senior Level", "Management"],
+                    "description": "Experience level filter (default 'Senior Level')",
+                },
+                "location": {
+                    "type": "string",
+                    "description": "Location filter (e.g. 'San Francisco, CA', 'New York, NY', 'Flexible / Remote')",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Max jobs to return (default 10, max 20)",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+
+def handle_muse_search(
+    category: str = "",
+    level: str = "Senior Level",
+    location: str = "",
+    max_results: int = 10,
+) -> str:
+    """Search The Muse for curated job listings. No API key required."""
+    global _web_fetch_count
+    _web_fetch_count += 1
+    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+    max_results = min(int(max_results), 20)
+    params = {"page": 1}
+    if category:
+        params["category"] = category
+    if level:
+        params["level"] = level
+    if location:
+        params["location"] = location
+
+    try:
+        time.sleep(1)
+        resp = requests.get(_MUSE_BASE_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("results", [])[:max_results]
+
+        if not results:
+            return f"No Muse results for category='{category}', level='{level}', location='{location}'"
+
+        total = data.get("total", "?")
+        parts = [f"The Muse jobs: {len(results)} results (of {total} total)\n"]
+
+        for i, job in enumerate(results, 1):
+            title = job.get("name", "N/A")
+            company = job.get("company", {}).get("name", "N/A")
+            locations = ", ".join(loc.get("name", "") for loc in job.get("locations", []))
+            pub_date = job.get("publication_date", "N/A")[:10]
+            landing_page = job.get("refs", {}).get("landing_page", "N/A")
+            contents = job.get("contents", "")
+            # Strip HTML
+            if contents:
+                contents = BeautifulSoup(contents, "html.parser").get_text()
+            if len(contents) > 400:
+                contents = contents[:400] + "..."
+
+            entry = (
+                f"\n--- Job {i} ---\n"
+                f"Title: {title}\n"
+                f"Company: {company}\n"
+                f"Location: {locations or 'N/A'}\n"
+                f"Posted: {pub_date}\n"
+                f"URL: {landing_page}\n"
+                f"Description: {contents}\n"
+            )
+            parts.append(entry)
+
+        output = "\n".join(parts)
+        if len(output) > 10000:
+            output = output[:10000] + "\n\n[... truncated at 10000 chars]"
+        return output
+
+    except Exception as e:
+        return f"ERROR searching The Muse: {e}"
+
+
+_REMOTIVE_BASE_URL = "https://remotive.com/api/remote-jobs"
+
+_REMOTIVE_TOOL_DEFINITION = {
+    "type": "function",
+    "function": {
+        "name": "remotive_search",
+        "description": (
+            "Search Remotive for remote job listings. Free API, no key required. "
+            "Returns remote-only job postings with titles, companies, salary info, and URLs. "
+            "Useful for finding remote product and AI roles. "
+            "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (e.g. 'product manager', 'director of product', 'AI')",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Job category slug (e.g. 'product', 'data', 'software-dev', 'all-others')",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Max jobs to return (default 10, max 20)",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+
+def handle_remotive_search(
+    query: str = "",
+    category: str = "",
+    max_results: int = 10,
+) -> str:
+    """Search Remotive for remote jobs. No API key required."""
+    global _web_fetch_count
+    _web_fetch_count += 1
+    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+    max_results = min(int(max_results), 20)
+    params = {}
+    if query:
+        params["search"] = query
+    if category:
+        params["category"] = category
+
+    try:
+        time.sleep(1)
+        resp = requests.get(_REMOTIVE_BASE_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        jobs = data.get("jobs", [])[:max_results]
+
+        if not jobs:
+            return f"No Remotive results for query='{query}', category='{category}'"
+
+        parts = [f"Remotive remote jobs: {len(jobs)} results\n"]
+
+        for i, job in enumerate(jobs, 1):
+            title = job.get("title", "N/A")
+            company = job.get("company_name", "N/A")
+            loc = job.get("candidate_required_location", "Worldwide")
+            salary = job.get("salary", "Not listed")
+            pub_date = job.get("publication_date", "N/A")[:10] if job.get("publication_date") else "N/A"
+            url = job.get("url", "N/A")
+            job_type = job.get("job_type", "N/A")
+            tags = ", ".join(job.get("tags", [])[:5])
+            description = job.get("description", "")
+            if description:
+                description = BeautifulSoup(description, "html.parser").get_text()
+            if len(description) > 300:
+                description = description[:300] + "..."
+
+            entry = (
+                f"\n--- Job {i} ---\n"
+                f"Title: {title}\n"
+                f"Company: {company}\n"
+                f"Location: {loc}\n"
+                f"Type: {job_type}\n"
+                f"Salary: {salary}\n"
+                f"Tags: {tags}\n"
+                f"Posted: {pub_date}\n"
+                f"URL: {url}\n"
+                f"Description: {description}\n"
+            )
+            parts.append(entry)
+
+        output = "\n".join(parts)
+        if len(output) > 10000:
+            output = output[:10000] + "\n\n[... truncated at 10000 chars]"
+        return output
+
+    except Exception as e:
+        return f"ERROR searching Remotive: {e}"
+
+
+_HUNTER_BASE_URL = "https://api.hunter.io/v2"
+
+_HUNTER_TOOL_DEFINITION = {
+    "type": "function",
+    "function": {
+        "name": "hunter_search",
+        "description": (
+            "Search Hunter.io for email contacts at a company domain. "
+            "Free tier: 25 searches/month — use sparingly for top networking targets only. "
+            "Returns names, email addresses, titles, and confidence scores. "
+            "Best for Phase 4 networking strategy to find hiring managers and recruiters. "
+            "Counts toward the web fetch rate limit (max 3 fetches per cycle)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "description": "Company domain to search (e.g. 'anthropic.com', 'openai.com', 'scale.com')",
+                },
+                "role": {
+                    "type": "string",
+                    "enum": ["management", "executive", "senior", "all"],
+                    "description": "Filter by seniority level (default 'management'). Use 'executive' for C-level, 'senior' for directors.",
+                },
+                "department": {
+                    "type": "string",
+                    "enum": ["product", "engineering", "hr", "executive", "all"],
+                    "description": "Filter by department (default 'product')",
+                },
+            },
+            "required": ["domain"],
+        },
+    },
+}
+
+
+def handle_hunter_search(
+    domain: str,
+    role: str = "management",
+    department: str = "product",
+) -> str:
+    """Search Hunter.io for email contacts at a domain. Requires HUNTER_API_KEY env var."""
+    global _web_fetch_count
+    _web_fetch_count += 1
+    if _web_fetch_count > _WEB_CALLS_PER_CYCLE:
+        return f"RATE LIMIT: Max {_WEB_CALLS_PER_CYCLE} web fetches per cycle. Save remaining for next cycle."
+
+    cfg = _load_config()
+    hunter_cfg = cfg.get("hunter", {}) or {}
+    api_key = hunter_cfg.get("api_key", "") or os.environ.get("HUNTER_API_KEY", "")
+    if not api_key:
+        return "ERROR: Hunter.io API key required. Configure in the dashboard API Keys tab or set HUNTER_API_KEY env var. Sign up free at https://hunter.io/"
+
+    params = {
+        "domain": domain,
+        "api_key": api_key,
+    }
+    if role and role != "all":
+        params["seniority"] = role
+    if department and department != "all":
+        params["department"] = department
+
+    try:
+        time.sleep(1)
+        resp = requests.get(f"{_HUNTER_BASE_URL}/domain-search", params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
+        emails = data.get("emails", [])
+
+        if not emails:
+            return f"No Hunter.io results for domain '{domain}' (role={role}, dept={department})"
+
+        org = data.get("organization", "N/A")
+        parts = [f"Hunter.io contacts at {domain} ({org}) — {len(emails)} results\n"]
+
+        for i, contact in enumerate(emails, 1):
+            first = contact.get("first_name", "")
+            last = contact.get("last_name", "")
+            name = f"{first} {last}".strip() or "N/A"
+            email = contact.get("value", "N/A")
+            position = contact.get("position", "N/A")
+            confidence = contact.get("confidence", "N/A")
+            linkedin = contact.get("linkedin", "")
+            phone = contact.get("phone_number", "")
+
+            entry = (
+                f"\n--- Contact {i} ---\n"
+                f"Name: {name}\n"
+                f"Email: {email}\n"
+                f"Title: {position}\n"
+                f"Confidence: {confidence}%\n"
+            )
+            if linkedin:
+                entry += f"LinkedIn: {linkedin}\n"
+            if phone:
+                entry += f"Phone: {phone}\n"
+            parts.append(entry)
+
+        output = "\n".join(parts)
+        if len(output) > 10000:
+            output = output[:10000] + "\n\n[... truncated at 10000 chars]"
+        return output
+
+    except Exception as e:
+        return f"ERROR searching Hunter.io: {e}"
+
+
 # --- Dispatcher ---
 
 TOOL_HANDLERS = {
@@ -2208,6 +2681,10 @@ TOOL_HANDLERS = {
     "patent_search": lambda args: handle_patent_search(args["query"], args.get("keywords", []), args.get("max_results", 5)),
     "wikipedia_search": lambda args: handle_wikipedia_search(args["query"], args.get("keywords", []), args.get("max_results", 5)),
     "sec_filings": lambda args: handle_sec_filings(args["query"], args.get("keywords"), args.get("filing_type", "10-K"), args.get("max_results", 5), args.get("section")),
+    "adzuna_search": lambda args: handle_adzuna_search(args.get("query", ""), args.get("location", ""), args.get("salary_min", 0), args.get("max_results", 10), args.get("sort_by", "relevance")),
+    "muse_search": lambda args: handle_muse_search(args.get("category", ""), args.get("level", "Senior Level"), args.get("location", ""), args.get("max_results", 10)),
+    "remotive_search": lambda args: handle_remotive_search(args.get("query", ""), args.get("category", ""), args.get("max_results", 10)),
+    "hunter_search": lambda args: handle_hunter_search(args["domain"], args.get("role", "management"), args.get("department", "product")),
 }
 
 

@@ -105,6 +105,15 @@ class NewsApiConfig(BaseModel):
     api_key: str = ""
 
 
+class AdzunaConfig(BaseModel):
+    app_id: str = ""
+    app_key: str = ""
+
+
+class HunterConfig(BaseModel):
+    api_key: str = ""
+
+
 # --- Helpers ---
 
 def _topic_dir(name: str) -> Path:
@@ -2647,6 +2656,133 @@ def api_put_newsapi_config(body: NewsApiConfig):
         "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
     }
     _save_newsapi_config(newsapi_cfg)
+    return {"status": "saved"}
+
+
+# ── Adzuna config ──────────────────────────────────────────────────────
+
+
+def _load_adzuna_config() -> dict:
+    """Load Adzuna config from config.yaml, falling back to env vars."""
+    cfg = load_config()
+    adzuna = cfg.get("adzuna", {}) or {}
+    app_id = adzuna.get("app_id", "") or os.environ.get("ADZUNA_APP_ID", "")
+    app_key = adzuna.get("app_key", "") or os.environ.get("ADZUNA_APP_KEY", "")
+    return {"app_id": app_id, "app_key": app_key}
+
+
+def _save_adzuna_config(adzuna_cfg: dict):
+    """Upsert the adzuna: block in config.yaml, preserving other content."""
+    cfg_path = ROOT / "config.yaml"
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+
+    lines = ["adzuna:"]
+    for key in ("app_id", "app_key"):
+        val = adzuna_cfg.get(key, "")
+        lines.append(f'  {key}: "{val}"')
+    snippet = "\n".join(lines)
+
+    if re.search(r"^adzuna:\s*\r?$", text, re.MULTILINE):
+        text = re.sub(
+            r"^adzuna:\s*\r?\n(?:[ \t]+\S.*\r?\n?)*",
+            snippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + snippet + "\n"
+
+    cfg_path.write_text(text, encoding="utf-8")
+
+
+@app.get("/api/adzuna/config")
+def api_get_adzuna_config():
+    """Return Adzuna config with masked keys + configured flag."""
+    cfg = _load_adzuna_config()
+    app_id = cfg.get("app_id", "")
+    app_key = cfg.get("app_key", "")
+    id_masked = ""
+    key_masked = ""
+    if app_id:
+        id_masked = app_id[:4] + "..." + app_id[-4:] if len(app_id) > 8 else "***"
+    if app_key:
+        key_masked = app_key[:4] + "..." + app_key[-4:] if len(app_key) > 8 else "***"
+    return {
+        "app_id_masked": id_masked,
+        "app_key_masked": key_masked,
+        "configured": bool(app_id and app_key),
+    }
+
+
+@app.put("/api/adzuna/config")
+def api_put_adzuna_config(body: AdzunaConfig):
+    """Save Adzuna app_id and app_key to config.yaml."""
+    existing = _load_adzuna_config()
+    adzuna_cfg = {
+        "app_id": body.app_id if body.app_id else existing.get("app_id", ""),
+        "app_key": body.app_key if body.app_key else existing.get("app_key", ""),
+    }
+    _save_adzuna_config(adzuna_cfg)
+    return {"status": "saved"}
+
+
+# ── Hunter.io config ──────────────────────────────────────────────────
+
+
+def _load_hunter_config() -> dict:
+    """Load Hunter config from config.yaml, falling back to env vars."""
+    cfg = load_config()
+    hunter = cfg.get("hunter", {}) or {}
+    api_key = hunter.get("api_key", "") or os.environ.get("HUNTER_API_KEY", "")
+    return {"api_key": api_key}
+
+
+def _save_hunter_config(hunter_cfg: dict):
+    """Upsert the hunter: block in config.yaml, preserving other content."""
+    cfg_path = ROOT / "config.yaml"
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+
+    lines = ["hunter:"]
+    for key in ("api_key",):
+        val = hunter_cfg.get(key, "")
+        lines.append(f'  {key}: "{val}"')
+    snippet = "\n".join(lines)
+
+    if re.search(r"^hunter:\s*\r?$", text, re.MULTILINE):
+        text = re.sub(
+            r"^hunter:\s*\r?\n(?:[ \t]+\S.*\r?\n?)*",
+            snippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + snippet + "\n"
+
+    cfg_path.write_text(text, encoding="utf-8")
+
+
+@app.get("/api/hunter/config")
+def api_get_hunter_config():
+    """Return Hunter config with masked api_key + configured flag."""
+    cfg = _load_hunter_config()
+    api_key = cfg.get("api_key", "")
+    masked = ""
+    if api_key:
+        masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+    return {
+        "api_key_masked": masked,
+        "configured": bool(api_key),
+    }
+
+
+@app.put("/api/hunter/config")
+def api_put_hunter_config(body: HunterConfig):
+    """Save Hunter api_key to config.yaml."""
+    existing = _load_hunter_config()
+    hunter_cfg = {
+        "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
+    }
+    _save_hunter_config(hunter_cfg)
     return {"status": "saved"}
 
 

@@ -47,8 +47,23 @@ def _get_vertex_token() -> str:
             "google-auth is required for Vertex AI. Install it with: pip install google-auth"
         )
 
+    # Prefer Application Default Credentials (user login) over any service
+    # account pointed to by GOOGLE_APPLICATION_CREDENTIALS, which may belong
+    # to a different project.
+    adc_path = os.path.join(
+        os.environ.get("APPDATA") or os.path.expanduser("~"),
+        "gcloud", "application_default_credentials.json",
+    )
     try:
-        credentials, _ = google.auth.default()
+        if os.path.exists(adc_path):
+            credentials, _ = google.auth.load_credentials_from_file(
+                adc_path,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+        else:
+            credentials, _ = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
         credentials.refresh(google.auth.transport.requests.Request())
     except google.auth.exceptions.DefaultCredentialsError:
         raise RuntimeError(
@@ -71,10 +86,11 @@ def get_client():
                 "Vertex AI requires a GCP project ID. Set it in config.yaml under vertex.project\n"
                 "or via the dashboard Configure tab, or set VERTEX_PROJECT env var."
             )
+        location = vertex_cfg.get("location", "") or os.environ.get("VERTEX_LOCATION", "us-central1")
         token = _get_vertex_token()
         base_url = (
-            f"https://aiplatform.googleapis.com/v1beta1/"
-            f"projects/{project}/locations/global/endpoints/openapi"
+            f"https://{location}-aiplatform.googleapis.com/v1beta1/"
+            f"projects/{project}/locations/{location}/endpoints/openapi"
         )
         return OpenAI(base_url=base_url, api_key=token)
 

@@ -954,38 +954,37 @@ def api_spend_history(name: str):
 
 _ERROR_PATTERNS = [
     (re.compile(r"Traceback \(most recent call last\)"), True),   # start of traceback
-    (re.compile(r"^\w*Error:?\s+(.+)", re.MULTILINE), False),    # ErrorType: message
-    (re.compile(r"^\w*Exception:?\s+(.+)", re.MULTILINE), False),
+    (re.compile(r"^\w+Error:\s+.+", re.MULTILINE), False),       # Python errors like ValueError:
+    (re.compile(r"^\w+Exception:\s+.+", re.MULTILINE), False),   # Python exceptions
     (re.compile(r"Budget exceeded", re.IGNORECASE), False),
-    (re.compile(r"FAILED", re.IGNORECASE), False),
 ]
+# Lines that look like errors but are normal agent operations (tool results, supervisor blocks)
+_ERROR_FALSE_POSITIVES = re.compile(
+    r"Result:|Observation logged:|RATE LIMIT:|BLOCKED:|DUPLICATE DETECTED:", re.IGNORECASE
+)
 
 
 def _summarize_error(lines: list[str]) -> str | None:
     """Extract a human-readable error summary from log tail lines."""
     text = "\n".join(lines)
 
+    # Filter out lines that are normal agent operations, not real errors
+    real_lines = [l for l in lines if not _ERROR_FALSE_POSITIVES.search(l)]
+    real_text = "\n".join(real_lines)
+
     # Look for the last Python exception (ErrorType: message)
     exc_match = None
-    for m in re.finditer(r"^(\w+(?:Error|Exception)):\s*(.+)", text, re.MULTILINE):
+    for m in re.finditer(r"^(\w+(?:Error|Exception)):\s*(.+)", real_text, re.MULTILINE):
         exc_match = m
     if exc_match:
         err_type = exc_match.group(1)
         err_msg = exc_match.group(2).strip()[:200]
-        # Make it more readable
-        spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", err_type).lower()
         return f"{err_type}: {err_msg}"
 
     # Budget exceeded
-    for line in reversed(lines):
+    for line in reversed(real_lines):
         if re.search(r"budget exceeded", line, re.IGNORECASE):
             return "Budget exceeded — agent stopped because spending limit was reached"
-
-    # Generic FAILED
-    for line in reversed(lines):
-        if re.search(r"FAILED", line, re.IGNORECASE):
-            clean = line.strip()[:200]
-            return f"Agent failure: {clean}"
 
     return None
 
@@ -1095,11 +1094,23 @@ def api_health(name: str):
         except Exception:
             return None
 
-    # --- Scan full agent.log for all errors with timestamps ---
+    # --- Scan agent.log for errors since last agent start ---
     log_path = ROOT / "topics" / name / "data" / "agent.log"
     if log_path.exists():
         try:
             raw = log_path.read_bytes()
+            # Only scan log content written since the agent was last started
+            entry = _running_agents.get(name)
+            log_offset = entry.get("log_offset", 0) if entry else 0
+            if not log_offset:
+                # Fallback: read persisted offset from disk
+                offset_file = log_path.parent / ".log_offset"
+                if offset_file.exists():
+                    try:
+                        log_offset = int(offset_file.read_text(encoding="utf-8").strip())
+                    except (ValueError, OSError):
+                        log_offset = 0
+            raw = raw[log_offset:]
             text = raw.decode("utf-8", errors="replace")
             all_lines = text.splitlines()
             seen_errors: set[str] = set()
@@ -1145,9 +1156,16 @@ def api_health(name: str):
                 "cost_at": all_cycles[-1].get("cost_after") if all_cycles else None,
             })
 
-    # --- Full cycle history scan ---
+    # --- Determine cutoff: only show issues since agent's last start ---
+    agent_entry = _running_agents.get(name)
+    started_at = agent_entry.get("started_at", "") if agent_entry else ""
+
+    # --- Full cycle history scan (filtered to current run) ---
     if all_cycles:
         for i, c in enumerate(all_cycles):
+            # Skip cycles from before the current agent run
+            if started_at and c.get("timestamp", "") < started_at:
+                continue
             action = c.get("action", "")
             # budget_stop
             if action == "budget_stop":
@@ -1167,6 +1185,10 @@ def api_health(name: str):
                     "timestamp": c.get("timestamp", ""),
                     "cost_at": c.get("cost_after"),
                 })
+
+        # Filter cycles to current run for remaining checks
+        if started_at:
+            all_cycles = [c for c in all_cycles if c.get("timestamp", "") >= started_at]
 
         # Consecutive reflect cycles with no applied output (2+)
         i = 0
@@ -1261,12 +1283,17 @@ def api_start_agent(name: str, delay: int = 10):
         stderr=subprocess.STDOUT,
     )
 
+    log_offset = log_path.stat().st_size
     _running_agents[name] = {
         "process": proc,
         "pid": proc.pid,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "log_file": log_file,
+        "log_offset": log_offset,
     }
+    # Persist log offset so health checks survive dashboard reloads
+    offset_file = log_path.parent / ".log_offset"
+    offset_file.write_text(str(log_offset), encoding="utf-8")
     _crashed_agents.discard(name)
 
     return {"started": name, "pid": proc.pid}

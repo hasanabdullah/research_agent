@@ -1131,6 +1131,23 @@ def run_cycle(config: dict) -> dict:
         if choice == "a":
             target = _resolve_file_path(patch_data["path"])
             target.parent.mkdir(parents=True, exist_ok=True)
+
+            # Safety check: reject patches that would drastically shrink a file
+            # (e.g. propose_edit that replaces 800 lines with 40 lines)
+            if target.exists():
+                old_size = len(target.read_text(encoding="utf-8"))
+                new_size = len(patch_data["new_content"])
+                if old_size > 1000 and new_size < old_size * 0.5:
+                    click.echo(
+                        f"BLOCKED: Patch would shrink {patch_data['path']} from "
+                        f"{old_size:,} to {new_size:,} bytes ({new_size*100//old_size}% of original). "
+                        f"Rejecting to prevent data loss."
+                    )
+                    patch_data["status"] = "rejected"
+                    patch_file.write_text(json.dumps(patch_data, indent=2), encoding="utf-8")
+                    patches_processed.append(patch_data)
+                    continue
+
             target.write_text(patch_data["new_content"], encoding="utf-8")
             click.echo(f"Applied: {target}")
 

@@ -822,13 +822,18 @@ def handle_append_to_file(path: str, content: str, reasoning: str) -> str:
     # Read existing content — check pending patches first so sequential
     # appends within a single cycle build on each other instead of each
     # one starting from the on-disk file (which hasn't been updated yet).
+    # IMPORTANT: Only chain on other append_to_file patches, NOT propose_edit
+    # patches — propose_edit replaces the entire file, so chaining on it
+    # would lose all existing content.
     existing = target.read_text(encoding="utf-8") if target.exists() else ""
     patches_dir = _paths["patches_dir"]
     if patches_dir.exists():
         for pf in sorted(patches_dir.glob("*.patch")):
             try:
                 pd = json.loads(pf.read_text(encoding="utf-8"))
-                if pd.get("status") == "pending" and pd.get("path") == path:
+                if (pd.get("status") == "pending"
+                        and pd.get("path") == path
+                        and pd.get("source") == "append_to_file"):
                     existing = pd["new_content"]
             except Exception:
                 pass
@@ -845,7 +850,8 @@ def handle_append_to_file(path: str, content: str, reasoning: str) -> str:
             return (
                 f"DUPLICATE DETECTED: The following sections already exist in {path}: "
                 + ", ".join(dupes)
-                + ". Use propose_edit to update existing sections instead of appending."
+                + ". Skip this company and move on to a different one. "
+                + "Do NOT use propose_edit as a workaround — it will overwrite the entire file."
             )
 
     # Ensure separator between existing and new content
@@ -883,6 +889,7 @@ def handle_append_to_file(path: str, content: str, reasoning: str) -> str:
         "new_content": new_full,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "pending",
+        "source": "append_to_file",
     }
     patch_path.write_text(json.dumps(patch_data, indent=2), encoding="utf-8")
 

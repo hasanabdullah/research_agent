@@ -565,26 +565,48 @@ def _build_phase_guidance(config: dict, paths: dict, phase_budget_exceeded: dict
 
 
 def _extract_ideas(research_dir: Path) -> list[dict]:
-    """Parse top_ideas.md for ## IDEA #N: Title headers with descriptions.
+    """Parse idea headers from research files.
+
+    Searches top_ideas.md first, then falls back to existing_research_summary.md.
+    Supports both H2 (## IDEA) and H1 (# IDEA) header formats.
 
     Returns a list of dicts with id, rank, title, score, industry,
     what_it_is, and problem fields.
     """
     import re
-    ideas_file = research_dir / "top_ideas.md"
-    if not ideas_file.exists():
+
+    # Try multiple candidate files
+    candidates = [
+        research_dir / "top_ideas.md",
+        research_dir / "existing_research_summary.md",
+    ]
+    content = ""
+    for candidate in candidates:
+        if candidate.exists():
+            text = candidate.read_text(encoding="utf-8")
+            # Check if file has IDEA headers
+            if re.search(r'^#{1,2} IDEA\s', text, re.MULTILINE):
+                content = text
+                break
+    if not content:
         return []
 
-    content = ideas_file.read_text(encoding="utf-8")
     lines = content.splitlines()
 
-    # Match headers like: ## IDEA #1: Title (8/8)  OR  ## IDEA 1/20: Title
+    # Match headers like:
+    #   ## IDEA #1: Title (8/8)
+    #   ## IDEA 1/20: Title
+    #   # IDEA 1: Title — Subtitle
     header_pattern = re.compile(
-        r'^## IDEA\s*#?(\d+)(?:/\d+)?\s*:\s*(.+?)(?:\s*\((\d+)/(\d+)\))?\s*$',
+        r'^#{1,2} IDEA\s*#?(\d+)(?:/\d+)?\s*:\s*(.+?)(?:\s*\((\d+)/(\d+)\))?\s*$',
     )
     # Match metadata line: **Rank: #4 | Score: 8/8 | Industry: Accounting**
     meta_pattern = re.compile(
         r'^\*\*Rank:.*?Score:\s*(\d+/\d+).*?Industry:\s*(.+?)\*\*\s*$',
+    )
+    # Match source line: **Source:** gaming topic | Score 16/20 | Industry: Game Development
+    source_pattern = re.compile(
+        r'^\*\*Source:\*\*.*?Score\s*:?\s*(\d+/\d+).*?Industry:\s*(.+?)$',
     )
 
     # Find all idea header line numbers
@@ -598,26 +620,33 @@ def _extract_ideas(research_dir: Path) -> list[dict]:
     for idx, (start_line, m) in enumerate(idea_starts):
         rank = int(m.group(1))
         title = m.group(2).strip()
+        # Strip trailing " —" from title if subtitle was captured
+        title = re.sub(r'\s*—\s*$', '', title).strip()
         score_num = m.group(3)
         score_den = m.group(4)
         score = f"{score_num}/{score_den}" if score_num and score_den else ""
 
-        # Determine the block of text for this idea (until next ## IDEA or EOF)
+        # Determine the block of text for this idea (until next # IDEA or EOF)
         end_line = idea_starts[idx + 1][0] if idx + 1 < len(idea_starts) else len(lines)
         block = lines[start_line:end_line]
 
-        # Extract industry and score from metadata line
+        # Extract industry and score from metadata or source line
         industry = ""
-        for bl in block[:3]:
+        for bl in block[:5]:
             mm = meta_pattern.match(bl)
             if mm:
                 score = score or mm.group(1)
                 industry = mm.group(2).strip()
                 break
+            sm = source_pattern.match(bl)
+            if sm:
+                score = score or sm.group(1)
+                industry = sm.group(2).strip()
+                break
 
-        # Extract ### sections
+        # Extract ### or ## sections
         what_it_is = _extract_section(block, "What It Is")
-        problem = _extract_section(block, "Problem Solved")
+        problem = _extract_section(block, "Problem Solved") or _extract_section(block, "Problem")
 
         ideas.append({
             "id": f"idea_{rank}",
@@ -718,15 +747,15 @@ def _extract_checkpoint_items(research_dir: Path) -> list[dict]:
 
 
 def _extract_section(block: list[str], heading_prefix: str) -> str:
-    """Extract the first paragraph after a ### heading that starts with heading_prefix."""
+    """Extract the first paragraph after a ## or ### heading that starts with heading_prefix."""
     capturing = False
     paragraphs = []
     for line in block:
-        if line.startswith("### ") and heading_prefix in line:
+        if (line.startswith("## ") or line.startswith("### ")) and heading_prefix in line:
             capturing = True
             continue
         if capturing:
-            if line.startswith("### ") or line.startswith("## "):
+            if line.startswith("## ") or line.startswith("### ") or line.startswith("# "):
                 break
             stripped = line.strip()
             if stripped:
@@ -1904,6 +1933,66 @@ def _effective_min_marker_count(bucket_idx: int, bucket: dict, config: dict, pat
     return base
 
 
+def _generate_final_recommendations(paths: dict, config: dict):
+    """Generate a final_recommendations.md by sending all research to the LLM."""
+    from llm import get_client, resolve_model, completions_with_retry
+
+    research_dir = paths["research_dir"]
+    # Gather all research content (skip tiny files and existing final_recommendations)
+    parts = []
+    for f in sorted(research_dir.glob("*.md")):
+        if f.name in ("final_recommendations.md", "README.md") or f.stat().st_size < 200:
+            continue
+        content = f.read_text(encoding="utf-8").strip()
+        if content:
+            parts.append(f"## {f.name}\n\n{content}")
+
+    if not parts:
+        return
+
+    combined = "\n\n---\n\n".join(parts)
+    # Truncate to avoid token limits — take first ~80K chars
+    if len(combined) > 80000:
+        combined = combined[:80000] + "\n\n[... truncated for length ...]"
+
+    model = config.get("scaffold_model", "anthropic/claude-sonnet-4.6")
+    client = get_client()
+
+    response = completions_with_retry(
+        client,
+        model=resolve_model(model),
+        max_tokens=4096,
+        messages=[
+            {"role": "system", "content": (
+                "You are a research analyst producing final recommendations from completed research. "
+                "Write a concise, actionable final recommendations document in markdown with:\n"
+                "- A 3-5 sentence executive summary at the top\n"
+                "- A ranked list of ideas with BUILD/KILL verdicts and one-line reasoning\n"
+                "- Top 3 recommended ideas to pursue, with why\n"
+                "- Key risks and next steps for each recommended idea\n"
+                "- Ideas to KILL with brief reasoning\n"
+                "Be direct and decisive. Reference specific data from the research."
+            )},
+            {"role": "user", "content": f"Generate final recommendations from this research:\n\n{combined}"},
+        ],
+    )
+
+    recs = response.choices[0].message.content
+    recs_path = research_dir / "final_recommendations.md"
+    recs_path.write_text(recs, encoding="utf-8")
+
+    # Record cost
+    usage = response.usage
+    if usage:
+        from costs import record_call
+        pricing = config.get("pricing", {"input_per_mtok": 1.0, "output_per_mtok": 5.0})
+        record_call(
+            getattr(usage, "prompt_tokens", 0) or 0,
+            getattr(usage, "completion_tokens", 0) or 0,
+            pricing, label="final_recommendations", costs_file=paths["costs_file"],
+        )
+
+
 def _get_current_phase_idx(config: dict, paths: dict, skip_phases: set = None) -> int | None:
     """Return the index of the first incomplete phase, or None if all complete."""
     buckets = config.get("research_buckets", [])
@@ -2143,9 +2232,43 @@ def run_topic(topic_name, cycles, delay):
         if cycles > 0 and cycle_count >= cycles:
             break
 
-        # Selection checkpoint: detect phase transition on phases with selection_checkpoint
+        # All phases complete — stop the agent
         cur_phase_idx = _get_current_phase_idx(config, paths, skip_phases=forced_complete_phases)
         buckets = config.get("research_buckets", [])
+        if cur_phase_idx is None and buckets:
+            # Generate final recommendations before stopping
+            recs_path = paths["research_dir"] / "final_recommendations.md"
+            if not recs_path.exists():
+                click.echo("  Generating final recommendations...")
+                try:
+                    _generate_final_recommendations(paths, config)
+                except Exception as e:
+                    click.echo(f"  Warning: failed to generate final recommendations: {e}")
+
+            click.echo(f"\n{'='*60}")
+            click.echo("ALL PHASES COMPLETE — stopping agent.")
+            click.echo(f"  Total cost: ${get_total_usd(paths['costs_file']):.4f}")
+            click.echo(f"  Cycles: {get_cycle_count(paths)}")
+            click.echo(f"{'='*60}\n")
+
+            # Mark topic as completed
+            cfg_path = ROOT / "topics" / topic_name / "agent_config.yaml"
+            if cfg_path.exists():
+                acfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+                acfg["completed"] = True
+                cfg_path.write_text(yaml.dump(acfg, default_flow_style=False), encoding="utf-8")
+
+            log_cycle({
+                "cycle": get_cycle_count(paths),
+                "action": "all_phases_complete",
+                "summary": "All research phases complete. Agent stopped automatically.",
+                "applied": False,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "cost_after": get_total_usd(paths["costs_file"]),
+            }, paths)
+            break
+
+        # Selection checkpoint: detect phase transition on phases with selection_checkpoint
         if (prev_phase_idx is not None
                 and cur_phase_idx != prev_phase_idx
                 and prev_phase_idx < len(buckets)):

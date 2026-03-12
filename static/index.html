@@ -602,7 +602,7 @@ async function showSelectionModal(topic) {
         </span>
         <div>
           <h2 style="margin:0;font-size:17px">${escHtml(data.phase)} Complete</h2>
-          <div style="font-size:12px;color:var(--text2);margin-top:2px">Select ${itemLabel} for Interview Playbook</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">Select ${itemLabel} for next round</div>
         </div>
       </div>
       <div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;margin-bottom:16px;padding-right:4px">
@@ -725,6 +725,7 @@ async function stopAgent(name) {
 
 async function selectTopic(name) {
   state.selected = name;
+  await loadOtherFilesNotionPage();
   renderSidebar();
   renderAgentControl();
   switchTab(state.tab);
@@ -750,9 +751,8 @@ function renderAgentControl() {
     `;
   } else if (t.selection_checkpoint) {
     const p5 = t.selection_checkpoint.phase5_ran;
-    const phaseName = t.selection_checkpoint.phase || 'Selection Phase';
-    const badge = p5 ? 'Playbook Complete' : phaseName + ' Complete';
-    const btnText = p5 ? 'Reselect for Playbook Re-run' : 'Select for Interview Playbook';
+    const badge = p5 ? 'Ready for Re-run' : 'Selection Checkpoint';
+    const btnText = p5 ? 'Reselect for Next Round' : 'Select for Next Round';
     el.innerHTML = `
       <span style="font-size:11px;background:var(--accent);color:#fff;border-radius:6px;padding:3px 8px;font-weight:600">${badge}</span>
       <button style="font-size:11px;background:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;cursor:pointer;color:#fff;font-weight:500" onclick="showSelectionModal(state.topics.find(t=>t.name==='${n}'))">${btnText}</button>
@@ -930,7 +930,27 @@ async function renderInsights() {
     `;
   });
 
+  // Slides section
+  html += `
+    <div id="slides-section" style="margin-top:20px;padding:16px;background:var(--bg2);border-radius:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <h3 style="font-size:16px;margin:0">Presentation Export</h3>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:13px;color:var(--text2)">Style:</label>
+        <select id="slide-style" style="padding:4px 8px;border-radius:4px;background:var(--bg3);color:var(--text);border:1px solid var(--border);font-size:13px">
+          <option value="concise">Concise (~20 slides)</option>
+          <option value="detailed">Detailed (~35 slides)</option>
+        </select>
+        <button class="save-btn" id="generate-slides-btn" onclick="generateSlides()" style="margin:0">Generate Slides</button>
+        <span id="slides-status" style="font-size:12px;color:var(--text2)"></span>
+      </div>
+      <div id="slides-actions" style="margin-top:10px"></div>
+    </div>
+  `;
+
   el.innerHTML = html;
+  loadSlidesStatus();
 }
 
 function renderInsightsFlat(el, existing, hasResearch, htmlPrefix) {
@@ -951,7 +971,24 @@ function renderInsightsFlat(el, existing, hasResearch, htmlPrefix) {
           <div class="md-content">${renderMd(existing.summary)}</div>
         </div>
       </div>
+      <div id="slides-section" style="margin-top:20px;padding:16px;background:var(--bg2);border-radius:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <h3 style="font-size:16px;margin:0">Presentation Export</h3>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:13px;color:var(--text2)">Style:</label>
+          <select id="slide-style" style="padding:4px 8px;border-radius:4px;background:var(--bg3);color:var(--text);border:1px solid var(--border);font-size:13px">
+            <option value="concise">Concise (~20 slides)</option>
+            <option value="detailed">Detailed (~35 slides)</option>
+          </select>
+          <button class="save-btn" id="generate-slides-btn" onclick="generateSlides()" style="margin:0">Generate Slides</button>
+          <span id="slides-status" style="font-size:12px;color:var(--text2)"></span>
+        </div>
+        <div id="slides-actions" style="display:none;margin-top:10px;gap:8px;align-items:center">
+        </div>
+      </div>
     `;
+    loadSlidesStatus();
   } else if (hasResearch) {
     el.innerHTML = pre + `
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px 0">
@@ -1277,6 +1314,79 @@ async function summarizeTopic() {
   }
 }
 
+
+// --- Slides ---
+
+async function loadSlidesStatus() {
+  if (!state.selected) return;
+  try {
+    const status = await api(`topics/${state.selected}/slides-status`);
+    const el = document.getElementById('slides-status');
+    const actions = document.getElementById('slides-actions');
+    if (!el || !actions) return;
+    if (status.generated) {
+      el.textContent = `${status.slide_count} slides (${status.style}) — ${formatTimestamp(status.generated_at)}`;
+      actions.style.display = 'flex';
+      actions.innerHTML = `
+        <a href="/api/topics/${encodeURIComponent(state.selected)}/download-slides"
+           class="save-btn" style="text-decoration:none;margin:0" download>Download .pptx</a>
+        <button class="save-btn" id="notion-slides-btn" onclick="publishSlidesToNotion()" style="margin:0;background:var(--bg3)">Push to Notion</button>
+        <span id="notion-slides-status" style="font-size:12px;color:var(--text2)"></span>
+      `;
+    } else {
+      el.textContent = 'No slides generated yet';
+      actions.style.display = 'none';
+      actions.innerHTML = '';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+async function generateSlides() {
+  const btn = document.getElementById('generate-slides-btn');
+  const statusEl = document.getElementById('slides-status');
+  const styleEl = document.getElementById('slide-style');
+  if (!btn) return;
+
+  const style = styleEl ? styleEl.value : 'concise';
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  statusEl.textContent = 'LLM is creating slide content...';
+
+  try {
+    const result = await api(`topics/${state.selected}/generate-slides?style=${style}`, { method: 'POST' });
+    btn.textContent = 'Generate Slides';
+    btn.disabled = false;
+    statusEl.textContent = `${result.slide_count} slides generated (${result.style})`;
+    loadSlidesStatus();
+  } catch (e) {
+    btn.textContent = 'Generate Slides';
+    btn.disabled = false;
+    statusEl.textContent = `Failed: ${e.message || e}`;
+    statusEl.style.color = 'var(--red)';
+  }
+}
+
+async function publishSlidesToNotion() {
+  const btn = document.getElementById('notion-slides-btn');
+  const statusEl = document.getElementById('notion-slides-status');
+  if (!btn) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Publishing...';
+
+  try {
+    const result = await api(`topics/${state.selected}/publish-slides-to-notion`, { method: 'POST' });
+    btn.textContent = 'Push to Notion';
+    btn.disabled = false;
+    if (statusEl) {
+      statusEl.innerHTML = `<a href="${escHtml(result.url)}" target="_blank" style="color:var(--accent)">View in Notion</a> (${result.slide_count} slides)`;
+    }
+  } catch (e) {
+    btn.textContent = 'Push to Notion';
+    btn.disabled = false;
+    if (statusEl) statusEl.textContent = `Failed: ${e.message || e}`;
+  }
+}
 
 // --- Activity Feed ---
 let _activityFeedCache = null;   // sorted cycles (newest first)
@@ -1681,7 +1791,7 @@ let _bucketsCache = null;
 
 async function renderResearch() {
   // Skip re-render if user is editing a Notion page ID input
-  if (document.activeElement && document.activeElement.id && document.activeElement.id.startsWith('bucket-notion-')) return;
+  if (document.activeElement && document.activeElement.id && (document.activeElement.id.startsWith('bucket-notion-') || document.activeElement.id === 'other-files-notion-id')) return;
   const el = document.getElementById('content');
   let data;
   try {
@@ -1756,9 +1866,12 @@ async function renderResearch() {
           <div class="bucket-body" id="bucket-body-${b.index}">
             <div class="bucket-files">
               ${b.files.map(f => `
-                <div class="file-item" onclick="viewFile('${esc(f.name)}')">
-                  <span class="fname">${escHtml(f.name)}</span>
-                  <span class="fsize">${(f.size / 1024).toFixed(1)} KB</span>
+                <div class="file-item" style="display:flex;align-items:center;gap:8px">
+                  <div style="flex:1;cursor:pointer" onclick="viewFile('${esc(f.name)}')">
+                    <span class="fname">${escHtml(f.name)}</span>
+                    <span class="fsize">${(f.size / 1024).toFixed(1)} KB</span>
+                  </div>
+                  <button class="bucket-publish-btn" onclick="event.stopPropagation();publishFileToNotion('${esc(f.name)}',this)" style="font-size:11px;padding:4px 10px" ${notionReady ? '' : 'disabled'}>Push to Notion</button>
                 </div>
               `).join('')}
             </div>
@@ -1776,6 +1889,8 @@ async function renderResearch() {
   }
 
   if (data.other_files.length > 0) {
+    const otherPageId = window._otherFilesNotionPageId || '';
+    const otherHasPageId = !!otherPageId;
     html += `
       <div class="bucket-section" id="bucket-other" style="margin-top:${data.buckets.length > 0 ? '20px' : '0'}">
         <div class="bucket-header" onclick="toggleBucket('other')">
@@ -1790,11 +1905,20 @@ async function renderResearch() {
         <div class="bucket-body" id="bucket-body-other">
           <div class="bucket-files">
             ${data.other_files.map(f => `
-              <div class="file-item" onclick="viewFile('${esc(f.name)}')">
-                <span class="fname">${escHtml(f.name)}</span>
-                <span class="fsize">${(f.size / 1024).toFixed(1)} KB</span>
+              <div class="file-item" style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;cursor:pointer" onclick="viewFile('${esc(f.name)}')">
+                  <span class="fname">${escHtml(f.name)}</span>
+                  <span class="fsize">${(f.size / 1024).toFixed(1)} KB</span>
+                </div>
+                <button class="bucket-publish-btn" onclick="event.stopPropagation();publishFileToNotion('${esc(f.name)}',this)" style="font-size:11px;padding:4px 10px" ${notionReady && otherHasPageId ? '' : 'disabled'}>Push to Notion</button>
               </div>
             `).join('')}
+          </div>
+          <div class="bucket-notion-row">
+            <input type="text" id="other-files-notion-id" value="${escHtml(otherPageId)}" placeholder="Notion page ID for other files" />
+            <button class="bucket-save-btn" id="other-files-save-btn" onclick="saveOtherFilesNotionPage()">Save</button>
+            <button class="bucket-publish-btn" id="other-files-pub-all-btn" onclick="publishAllOtherFiles()" ${otherHasPageId ? '' : 'disabled'}>Push All to Notion</button>
+            <span class="bucket-status" id="other-files-status"></span>
           </div>
         </div>
       </div>
@@ -1820,9 +1944,18 @@ async function renderResearch() {
     el.innerHTML = html;
   }
 
-  // Auto-expand if no buckets (flat list mode)
-  if (!data.has_buckets && data.other_files.length > 0) {
-    toggleBucket('other');
+  // Restore open state of buckets after re-render
+  if (!window._openBuckets) window._openBuckets = new Set();
+  // Auto-expand if no buckets (flat list mode) on first render
+  if (!data.has_buckets && data.other_files.length > 0 && !window._openBuckets.has('__initialized_flat')) {
+    window._openBuckets.add('other');
+    window._openBuckets.add('__initialized_flat');
+  }
+  for (const id of window._openBuckets) {
+    const body = document.getElementById(`bucket-body-${id}`);
+    const arrow = document.getElementById(`arrow-${id}`);
+    if (body) body.classList.add('open');
+    if (arrow) arrow.classList.add('open');
   }
 }
 
@@ -1830,9 +1963,15 @@ function toggleBucket(index) {
   const body = document.getElementById(`bucket-body-${index}`);
   const arrow = document.getElementById(`arrow-${index}`);
   if (!body) return;
+  if (!window._openBuckets) window._openBuckets = new Set();
   const isOpen = body.classList.contains('open');
   body.classList.toggle('open');
   if (arrow) arrow.classList.toggle('open');
+  if (isOpen) {
+    window._openBuckets.delete(String(index));
+  } else {
+    window._openBuckets.add(String(index));
+  }
 }
 
 async function saveBucketNotionPage(index) {
@@ -1910,10 +2049,103 @@ async function viewFile(name) {
   const data = await api(`topics/${state.selected}/research/${name}`);
   area.innerHTML = `
     <div class="file-viewer">
-      <h3>${name} <button class="back-btn" onclick="this.closest('.file-viewer').remove()">Close</button></h3>
+      <h3>
+        ${name}
+        <span style="display:flex;gap:6px">
+          <button class="bucket-publish-btn" onclick="publishFileToNotion('${esc(name)}',this)" style="font-size:11px;padding:4px 10px">Push to Notion</button>
+          <button class="back-btn" onclick="this.closest('.file-viewer').remove()">Close</button>
+        </span>
+      </h3>
       <div class="md-content">${renderMd(data.content)}</div>
     </div>
   `;
+}
+
+async function publishFileToNotion(fileName, btn) {
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Publishing...';
+  try {
+    const parentId = window._otherFilesNotionPageId || '';
+    let url = `topics/${state.selected}/publish-file-to-notion?file=${encodeURIComponent(fileName)}`;
+    if (parentId) url += `&parent_id=${encodeURIComponent(parentId)}`;
+    const result = await api(url, { method: 'POST' });
+    btn.textContent = 'Published';
+    btn.style.background = 'var(--green)';
+    setTimeout(() => { btn.textContent = origText; btn.style.background = ''; btn.disabled = false; }, 3000);
+  } catch (e) {
+    btn.textContent = 'Failed';
+    btn.style.background = 'var(--red)';
+    setTimeout(() => { btn.textContent = origText; btn.style.background = ''; btn.disabled = false; }, 3000);
+  }
+}
+
+async function loadOtherFilesNotionPage() {
+  if (!state.selected) return;
+  try {
+    const data = await api(`topics/${state.selected}/other-files-notion-page`);
+    window._otherFilesNotionPageId = data.notion_page_id || '';
+  } catch (e) {
+    window._otherFilesNotionPageId = '';
+  }
+}
+
+async function saveOtherFilesNotionPage() {
+  const input = document.getElementById('other-files-notion-id');
+  const btn = document.getElementById('other-files-save-btn');
+  const pubBtn = document.getElementById('other-files-pub-all-btn');
+  const pageId = input.value.trim();
+
+  btn.textContent = 'Saving...';
+  try {
+    await api(`topics/${state.selected}/other-files-notion-page`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notion_page_id: pageId }),
+    });
+    window._otherFilesNotionPageId = pageId;
+    btn.textContent = 'Saved';
+    btn.classList.add('saved');
+    if (pubBtn) pubBtn.disabled = !pageId;
+    // Enable/disable per-file buttons
+    document.querySelectorAll('#bucket-body-other .bucket-publish-btn').forEach(b => {
+      if (b.id !== 'other-files-pub-all-btn') b.disabled = !pageId;
+    });
+    setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('saved'); }, 2000);
+  } catch (e) {
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.textContent = 'Save'; }, 2000);
+  }
+}
+
+async function publishAllOtherFiles() {
+  const status = document.getElementById('other-files-status');
+  const btn = document.getElementById('other-files-pub-all-btn');
+  const buttons = document.querySelectorAll('#bucket-body-other .file-item .bucket-publish-btn');
+  btn.disabled = true;
+  btn.textContent = 'Publishing...';
+  let ok = 0, fail = 0;
+  for (const b of buttons) {
+    const fileName = b.getAttribute('onclick')?.match(/publishFileToNotion\('([^']+)'/)?.[1];
+    if (!fileName) continue;
+    try {
+      const parentId = window._otherFilesNotionPageId || '';
+      let url = `topics/${state.selected}/publish-file-to-notion?file=${encodeURIComponent(fileName)}`;
+      if (parentId) url += `&parent_id=${encodeURIComponent(parentId)}`;
+      await api(url, { method: 'POST' });
+      b.textContent = 'Published';
+      b.style.background = 'var(--green)';
+      ok++;
+    } catch (e) {
+      b.textContent = 'Failed';
+      b.style.background = 'var(--red)';
+      fail++;
+    }
+  }
+  btn.disabled = false;
+  btn.textContent = 'Push All to Notion';
+  status.textContent = `${ok} published${fail ? ', ' + fail + ' failed' : ''}`;
+  setTimeout(() => { status.textContent = ''; }, 5000);
 }
 
 // --- Mission ---

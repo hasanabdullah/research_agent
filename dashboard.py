@@ -626,6 +626,100 @@ def api_research_file(name: str, file: str):
     return {"name": file, "content": f.read_text(encoding="utf-8")}
 
 
+@app.put("/api/topics/{name}/other-files-notion-page")
+def api_update_other_files_notion_page(name: str, body: BucketNotionPage):
+    """Save a Notion page ID for the 'Other Files' section."""
+    paths = _paths_for(name)
+    publish_state_path = paths["data_dir"] / "notion_publish.json"
+    publish_state: dict = {}
+    if publish_state_path.exists():
+        publish_state = json.loads(publish_state_path.read_text(encoding="utf-8"))
+    publish_state["_other_files_page_id"] = body.notion_page_id
+    publish_state_path.write_text(json.dumps(publish_state, indent=2), encoding="utf-8")
+    return {"saved": True, "notion_page_id": body.notion_page_id}
+
+
+@app.get("/api/topics/{name}/other-files-notion-page")
+def api_get_other_files_notion_page(name: str):
+    """Get the saved Notion page ID for 'Other Files'."""
+    paths = _paths_for(name)
+    publish_state_path = paths["data_dir"] / "notion_publish.json"
+    page_id = ""
+    if publish_state_path.exists():
+        pub = json.loads(publish_state_path.read_text(encoding="utf-8"))
+        page_id = pub.get("_other_files_page_id", "")
+    return {"notion_page_id": page_id}
+
+
+@app.post("/api/topics/{name}/publish-file-to-notion")
+def api_publish_file_to_notion(name: str, file: str = "", parent_id: str = ""):
+    """Publish a single research file to Notion as a child page."""
+    if not file:
+        raise HTTPException(400, "file query parameter required")
+    paths = _paths_for(name)
+    f = paths["research_dir"] / file
+    if not f.exists():
+        raise HTTPException(404, f"Research file '{file}' not found")
+
+    notion_cfg = _load_notion_config()
+    if not notion_cfg["token"]:
+        raise HTTPException(500, "Notion token not configured")
+    if not notion_cfg["root_page_id"]:
+        raise HTTPException(500, "Notion root_page_id not configured")
+
+    headers = _notion_headers(notion_cfg["token"])
+
+    # Use explicit parent_id if provided, else check other_files page, else topic row, else root
+    publish_state_path = paths["data_dir"] / "notion_publish.json"
+    if not parent_id:
+        if publish_state_path.exists():
+            pub = json.loads(publish_state_path.read_text(encoding="utf-8"))
+            parent_id = pub.get("_other_files_page_id") or pub.get("_topic_row_id") or notion_cfg["root_page_id"]
+        else:
+            parent_id = notion_cfg["root_page_id"]
+
+    content = f.read_text(encoding="utf-8").strip()
+    if not content:
+        raise HTTPException(400, "File is empty")
+
+    title = f.stem.replace("_", " ").replace("-", " ").title()
+    blocks = _md_to_notion_blocks(content)
+
+    # Load publish state to check for existing page
+    publish_state: dict = {}
+    if publish_state_path.exists():
+        publish_state = json.loads(publish_state_path.read_text(encoding="utf-8"))
+
+    file_key = f.name
+    existing = publish_state.get(file_key)
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        if existing and isinstance(existing, dict) and existing.get("page_id"):
+            try:
+                _notion_update_page(existing["page_id"], title, blocks, headers)
+                page_id = existing["page_id"]
+                url = existing.get("url", f"https://notion.so/{page_id.replace('-', '')}")
+            except Exception:
+                page = _notion_create_page(parent_id, title, blocks, headers)
+                page_id = page["id"]
+                url = page.get("url", f"https://notion.so/{page_id.replace('-', '')}")
+        else:
+            page = _notion_create_page(parent_id, title, blocks, headers)
+            page_id = page["id"]
+            url = page.get("url", f"https://notion.so/{page_id.replace('-', '')}")
+
+        publish_state[file_key] = {
+            "page_id": page_id,
+            "url": url,
+            "published_at": now,
+        }
+        publish_state_path.write_text(json.dumps(publish_state, indent=2), encoding="utf-8")
+        return {"file": file_key, "url": url, "published_at": now}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to publish: {str(e)}")
+
+
 # --- Research Buckets ---
 
 @app.get("/api/topics/{name}/buckets")
@@ -2992,6 +3086,134 @@ def api_publish_all_topics():
 
     database_url = f"https://notion.so/{db_id.replace('-', '')}"
     return {"synced": len(results), "database_url": database_url, "topics": results}
+
+
+# --- Slide / Presentation endpoints ---
+
+
+@app.post("/api/topics/{name}/generate-slides")
+def api_generate_slides(name: str, style: str = "concise"):
+    """Generate a .pptx presentation from research files using LLM."""
+    paths = _paths_for(name)
+    research_dir = paths["research_dir"]
+    if not research_dir.exists():
+        raise HTTPException(404, "No research directory found")
+
+    files = _research_files(research_dir)
+    if not files:
+        raise HTTPException(404, "No research files to generate slides from")
+
+    if style not in ("concise", "detailed"):
+        style = "concise"
+
+    from slides import generate_presentation
+    result = generate_presentation(name, style=style)
+    return result
+
+
+@app.get("/api/topics/{name}/download-slides")
+def api_download_slides(name: str):
+    """Download the generated .pptx presentation file."""
+    paths = _paths_for(name)
+    pptx_path = paths["data_dir"] / "presentation.pptx"
+    if not pptx_path.exists():
+        raise HTTPException(404, "No presentation file found. Generate slides first.")
+    safe_name = name.replace(" ", "_")
+    return FileResponse(
+        str(pptx_path),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename=f"{safe_name}_presentation.pptx",
+    )
+
+
+@app.get("/api/topics/{name}/slides-status")
+def api_slides_status(name: str):
+    """Return current slide generation status for a topic."""
+    paths = _paths_for(name)
+    slides_path = paths["data_dir"] / "slides.json"
+    if not slides_path.exists():
+        return {"generated": False}
+    data = json.loads(slides_path.read_text(encoding="utf-8"))
+    return {
+        "generated": True,
+        "style": data.get("style", "concise"),
+        "slide_count": data.get("slide_count", 0),
+        "generated_at": data.get("generated_at"),
+    }
+
+
+@app.post("/api/topics/{name}/publish-slides-to-notion")
+def api_publish_slides_to_notion(name: str):
+    """Publish slide content as a structured Notion page under the topic row."""
+    paths = _paths_for(name)
+    slides_path = paths["data_dir"] / "slides.json"
+    if not slides_path.exists():
+        raise HTTPException(404, "No slides.json found. Generate slides first.")
+
+    slides_data = json.loads(slides_path.read_text(encoding="utf-8"))
+    slides = slides_data.get("slides", [])
+    if not slides:
+        raise HTTPException(404, "Slide content is empty")
+
+    notion_cfg = _load_notion_config()
+    if not notion_cfg["token"]:
+        raise HTTPException(500, "Notion token not configured")
+    if not notion_cfg["root_page_id"]:
+        raise HTTPException(500, "Notion root_page_id not configured")
+
+    headers = _notion_headers(notion_cfg["token"])
+
+    # Find parent: use the topic's Notion row if it exists, else root page
+    publish_state_path = paths["data_dir"] / "notion_publish.json"
+    parent_id = notion_cfg["root_page_id"]
+    if publish_state_path.exists():
+        pub = json.loads(publish_state_path.read_text(encoding="utf-8"))
+        if pub.get("_topic_row_id"):
+            parent_id = pub["_topic_row_id"]
+
+    # Convert slides to Notion blocks
+    from slides import slides_to_notion_blocks
+    blocks = slides_to_notion_blocks(slides)
+
+    style = slides_data.get("style", "concise")
+    page_title = f"{name.replace('-', ' ').title()} — Presentation ({style})"
+
+    # Check if we already published a slides page
+    slide_publish_path = paths["data_dir"] / "notion_slides_publish.json"
+    existing_page_id = None
+    if slide_publish_path.exists():
+        sp = json.loads(slide_publish_path.read_text(encoding="utf-8"))
+        existing_page_id = sp.get("page_id")
+
+    if existing_page_id:
+        try:
+            _notion_update_page(existing_page_id, page_title, blocks, headers)
+            page_id = existing_page_id
+            url = f"https://notion.so/{page_id.replace('-', '')}"
+        except Exception:
+            page = _notion_create_page(parent_id, page_title, blocks, headers)
+            page_id = page["id"]
+            url = page.get("url", f"https://notion.so/{page_id.replace('-', '')}")
+    else:
+        page = _notion_create_page(parent_id, page_title, blocks, headers)
+        page_id = page["id"]
+        url = page.get("url", f"https://notion.so/{page_id.replace('-', '')}")
+
+    now = datetime.now(timezone.utc).isoformat()
+    slide_publish_path.write_text(json.dumps({
+        "page_id": page_id,
+        "url": url,
+        "published_at": now,
+        "style": style,
+        "slide_count": len(slides),
+    }, indent=2), encoding="utf-8")
+
+    return {
+        "published_at": now,
+        "url": url,
+        "slide_count": len(slides),
+        "style": style,
+    }
 
 
 # --- Shutdown hook ---

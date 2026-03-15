@@ -317,7 +317,7 @@ def check_mission_alignment(research_dir: Path, mission_path: Path, costs_file: 
             client,
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=150,
+            max_tokens=2048,
             temperature=0.1,
         )
         answer = resp.choices[0].message.content.strip()
@@ -432,7 +432,7 @@ def synthesize_feedback(report: dict, config: dict, costs_file: Path) -> str:
             client,
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=400,
+            max_tokens=2048,
             temperature=0.2,
         )
         feedback = resp.choices[0].message.content.strip()
@@ -445,6 +445,14 @@ def synthesize_feedback(report: dict, config: dict, costs_file: Path) -> str:
                 pricing=_qe_pricing(),
                 label=f"qe_feedback_{report['qe_run']}",
                 costs_file=costs_file,
+            )
+
+        # Fallback if response was truncated (Vertex AI quirk)
+        finish = getattr(resp.choices[0], "finish_reason", None)
+        if finish == "length" and len(feedback) < 100:
+            return "\n".join(
+                f"{idx+1}. {i.get('suggestion', i['message'])}"
+                for idx, i in enumerate(issues)
             )
 
         return feedback

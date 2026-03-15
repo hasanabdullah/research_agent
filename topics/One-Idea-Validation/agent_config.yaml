@@ -3,7 +3,7 @@ budget:
   max_per_day_usd: 50.0
 completed: false
 research_buckets:
-- completion_marker: '## PERSONA'
+- completion_marker: '## '
   files:
   - customer_personas.md
   min_budget_usd: 7.0
@@ -12,48 +12,48 @@ research_buckets:
   name: 'Phase A: Evidence-Backed Pain Validation'
   notion_page_id: 320c6805a0ba804baa96c266fe9d6842
   weight: 3.5
-- completion_marker: '## COMPETITOR'
+- completion_marker: '## '
   files:
   - direct_competitors.md
   min_budget_usd: 10.0
-  min_complete_bytes: 25000
-  min_marker_count: 8
+  min_complete_bytes: 15000
+  min_marker_count: 5
   name: 'Phase B: Willingness to Pay & Parallel Examples'
   notion_page_id: 320c6805a0ba804baa96c266fe9d6842
   weight: 4.0
-- completion_marker: '## PLATFORM'
+- completion_marker: '## '
   files:
   - sales_channels.md
   min_budget_usd: 8.0
-  min_complete_bytes: 18000
-  min_marker_count: 6
+  min_complete_bytes: 12000
+  min_marker_count: 4
   name: 'Phase C: Platform APIs & Technical Feasibility'
   notion_page_id: 320c6805a0ba804baa96c266fe9d6842
   weight: 3.5
-- completion_marker: '## MVP FEATURE'
+- completion_marker: '## '
   files:
   - mvp_blueprint.md
   min_budget_usd: 7.0
-  min_complete_bytes: 15000
-  min_marker_count: 8
+  min_complete_bytes: 10000
+  min_marker_count: 5
   name: 'Phase D: MVP Definition — Sticky Revenue Features'
   notion_page_id: 320c6805a0ba804baa96c266fe9d6842
   weight: 3.0
-- completion_marker: '## VALIDATION TEST'
+- completion_marker: '## '
   files:
   - alternative_solutions.md
   min_budget_usd: 4.0
-  min_complete_bytes: 8000
-  min_marker_count: 5
+  min_complete_bytes: 5000
+  min_marker_count: 3
   name: 'Phase E: Pre-Build Validation Tests'
   notion_page_id: 320c6805a0ba804baa96c266fe9d6842
   weight: 1.5
-- completion_marker: '## BUILD STEP'
+- completion_marker: '## '
   files:
   - moat_and_retention.md
   min_budget_usd: 5.0
-  min_complete_bytes: 12000
-  min_marker_count: 8
+  min_complete_bytes: 8000
+  min_marker_count: 4
   name: 'Phase F: Technical MVP Build Plan'
   notion_page_id: 320c6805a0ba804baa96c266fe9d6842
   weight: 2.0

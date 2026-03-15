@@ -148,6 +148,9 @@
   .health-issue .issue-icon { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; margin-top: 1px; }
   .health-issue .issue-icon.warning { background: #fef3c7; color: #92400e; }
   .health-issue .issue-icon.critical { background: #fee2e2; color: #991b1b; }
+  .health-badge.info { background: #dbeafe; color: #1e40af; }
+  .health-issue .issue-icon.info { background: #dbeafe; color: #1e40af; }
+  .health-issue.resolved { opacity: 0.6; }
   .health-issue .issue-msg { flex: 1; color: var(--text); line-height: 1.4; }
   .health-issue .issue-time { color: var(--text2); font-size: 11px; flex-shrink: 0; font-family: var(--mono); }
 
@@ -1627,7 +1630,10 @@ function buildHealthPanel(health) {
 
   const typeLabels = {
     log_error: 'Log Error', process_crash: 'Crash', budget_stop: 'Budget', checkpoint: 'Checkpoint',
-    stuck_reflecting: 'Stuck', repeating_summary: 'Loop', high_burn_no_output: 'Burn'
+    stuck_reflecting: 'Stuck', repeating_summary: 'Loop', high_burn_no_output: 'Burn',
+    qe_stall: 'QE: Stall', qe_budget_waste: 'QE: Budget', qe_duplicate: 'QE: Duplicate',
+    qe_shrinkage: 'QE: Overwrite', qe_phase_misalign: 'QE: Phase', qe_citation: 'QE: Citations',
+    qe_marker_stall: 'QE: Progress', qe_mission: 'QE: Off-Mission', qe_check: 'QE'
   };
 
   let issueRows = '';
@@ -1637,16 +1643,19 @@ function buildHealthPanel(health) {
     // Show newest first
     const sorted = [...issues].reverse();
     issueRows = '<div class="health-scroll">' + sorted.map(iss => {
-      const icon = iss.severity === 'critical' ? '!' : '?';
+      const isResolved = iss.status === 'resolved';
+      const icon = isResolved ? '\u2713' : (iss.severity === 'critical' ? '!' : '?');
+      const rowClass = isResolved ? 'health-issue resolved' : 'health-issue';
+      const sevClass = isResolved ? 'info' : iss.severity;
       const d = iss.timestamp ? new Date(iss.timestamp) : null;
       const timeStr = d ? d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
       const typeTag = typeLabels[iss.type] || iss.type;
       const costStr = iss.cost_at != null ? `$${iss.cost_at.toFixed(4)}` : '';
-      return `<div class="health-issue">
-        <div class="issue-icon ${iss.severity}">${icon}</div>
+      return `<div class="${rowClass}">
+        <div class="issue-icon ${sevClass}">${icon}</div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-            <span class="health-badge ${iss.severity}" style="font-size:9px;padding:1px 6px">${typeTag}</span>
+            <span class="health-badge ${sevClass}" style="font-size:9px;padding:1px 6px">${typeTag}</span>
             ${costStr ? `<span style="font-family:var(--mono);font-size:11px;color:var(--text2)">${costStr}</span>` : ''}
           </div>
           <div class="issue-msg">${escHtml(iss.message)}</div>
@@ -2160,13 +2169,14 @@ async function renderConfigure() {
   el.innerHTML = '<div style="color:var(--text2)">Loading...</div>';
 
   // Fetch all configs in parallel
-  const [llmCfg, redditCfg, newsapiCfg, notionCfg, adzunaCfg, hunterCfg] = await Promise.all([
+  const [llmCfg, redditCfg, newsapiCfg, notionCfg, adzunaCfg, hunterCfg, tavilyCfg] = await Promise.all([
     fetch('/api/llm/config').then(r => r.json()).catch(() => ({ provider: '', api_key_set: false, api_key_masked: '' })),
     fetch('/api/reddit/config').then(r => r.json()).catch(() => ({ client_id: '', configured: false, client_secret_masked: '' })),
     fetch('/api/newsapi/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' })),
     fetch('/api/notion/config').then(r => r.json()).catch(() => ({ token_set: false, root_page_id: '', hub_database_id: '', token_masked: '' })),
     fetch('/api/adzuna/config').then(r => r.json()).catch(() => ({ configured: false, app_id_masked: '', app_key_masked: '' })),
-    fetch('/api/hunter/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' }))
+    fetch('/api/hunter/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' })),
+    fetch('/api/tavily/config').then(r => r.json()).catch(() => ({ configured: false, api_key_masked: '' }))
   ]);
 
   const tab = _configSubTab;
@@ -2415,6 +2425,22 @@ async function renderConfigure() {
           Get a free API key at <a href="https://hunter.io/users/sign_up" target="_blank" style="color:var(--accent)">hunter.io</a> (25 searches/month)
         </div>
         <button class="save-btn" id="hunter-config-btn" onclick="saveHunterConfig(this)">Save Hunter Config</button>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-header" onclick="toggleConfigSection('tavily')">
+        <h3><span class="arrow ${_openConfigSections.has('tavily') ? 'open' : ''}" id="cfg-arrow-tavily">&#9654;</span> Tavily</h3>
+        <span class="config-section-meta"><span class="status-dot" style="background:${tavilyCfg.configured ? 'var(--green)' : 'var(--red)'}"></span>${tavilyCfg.configured ? 'Configured' : 'Not configured'}</span>
+      </div>
+      <div class="config-section-body ${_openConfigSections.has('tavily') ? 'open' : ''}" id="cfg-body-tavily">
+        <div style="margin-bottom:8px">
+          <label style="display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500">API Key</label>
+          <input type="password" id="tavily-api-key" placeholder="${tavilyCfg.api_key_masked || 'Enter Tavily API key...'}" />
+        </div>
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">
+          AI-powered deep search. Get an API key at <a href="https://tavily.com" target="_blank" style="color:var(--accent)">tavily.com</a> (1000 free searches/month)
+        </div>
+        <button class="save-btn" id="tavily-config-btn" onclick="saveTavilyConfig(this)">Save Tavily Config</button>
       </div>
     </div>`;
 
@@ -2756,6 +2782,24 @@ async function saveHunterConfig(btn) {
     });
     btn.textContent = 'Saved!'; btn.classList.add('saved');
     setTimeout(() => { btn.textContent = 'Save Hunter Config'; btn.classList.remove('saved'); }, 1500);
+    renderConfigure();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+async function saveTavilyConfig(btn) {
+  const apiKey = document.getElementById('tavily-api-key').value;
+  const body = {};
+  if (apiKey) body.api_key = apiKey;
+  try {
+    await fetch('/api/tavily/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    btn.textContent = 'Saved!'; btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = 'Save Tavily Config'; btn.classList.remove('saved'); }, 1500);
     renderConfigure();
   } catch (e) {
     alert('Failed to save: ' + e.message);

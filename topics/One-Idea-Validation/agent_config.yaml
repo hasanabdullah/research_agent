@@ -60,3 +60,8 @@ research_buckets:
 review_checkpoints:
 - 0.33
 - 0.66
+qe:
+  enabled: true
+  interval_seconds: 90
+  cycle_threshold: 3
+  max_budget_usd: 1.00

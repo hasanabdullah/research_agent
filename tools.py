@@ -46,6 +46,12 @@ except ImportError:
     _EdgarCompany = None
     _EDGAR_AVAILABLE = False
 
+try:
+    from tavily import TavilyClient
+    _TAVILY_AVAILABLE = True
+except ImportError:
+    _TAVILY_AVAILABLE = False
+
 
 ROOT = Path(__file__).parent
 
@@ -711,6 +717,8 @@ def get_active_tools() -> list[dict]:
         tools.append(_ADZUNA_TOOL_DEFINITION)
     if _hunter_configured():
         tools.append(_HUNTER_TOOL_DEFINITION)
+    if _tavily_configured():
+        tools.append(_TAVILY_TOOL_DEFINITION)
     return tools
 
 
@@ -2722,6 +2730,113 @@ def handle_hunter_search(
         return f"ERROR searching Hunter.io: {e}"
 
 
+# --- Tavily deep search ---
+
+_TAVILY_TOOL_DEFINITION = {
+    "type": "function",
+    "function": {
+        "name": "tavily_search",
+        "description": (
+            "Deep web search using Tavily AI. Returns comprehensive, AI-curated results "
+            "with full content extracts — much richer than standard search snippets. "
+            "Best for in-depth research queries where you need detailed answers, not just links. "
+            "Use for market research, competitor analysis, and finding specific data points. "
+            "Counts toward the web search rate limit."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Detailed research query — be specific for best results",
+                },
+                "search_depth": {
+                    "type": "string",
+                    "enum": ["basic", "advanced"],
+                    "description": "Search depth: 'basic' for quick lookups, 'advanced' for thorough research (default 'advanced')",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Number of results (default 5, max 10)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
+def _tavily_configured() -> bool:
+    cfg = _load_config()
+    tavily = cfg.get("tavily", {}) or {}
+    api_key = tavily.get("api_key", "") or os.environ.get("TAVILY_API_KEY", "")
+    return bool(api_key)
+
+
+def handle_tavily_search(query: str, search_depth: str = "advanced", max_results: int = 5) -> str:
+    """Search the web via Tavily AI for deep, curated results."""
+    global _web_search_count
+    _web_search_count += 1
+    _limit = _get_web_calls_limit()
+    if _web_search_count > _limit:
+        return f"RATE LIMIT: Max {_limit} web searches per cycle. Save remaining for next cycle."
+
+    if not _TAVILY_AVAILABLE:
+        return "ERROR: tavily-python not installed. Run: pip install tavily-python"
+
+    cfg = _load_config()
+    tavily_cfg = cfg.get("tavily", {}) or {}
+    api_key = tavily_cfg.get("api_key", "") or os.environ.get("TAVILY_API_KEY", "")
+    if not api_key:
+        return "ERROR: Tavily API key required. Configure in the dashboard Configure tab or set TAVILY_API_KEY env var. Sign up at https://tavily.com"
+
+    max_results = min(int(max_results), 10)
+    if search_depth not in ("basic", "advanced"):
+        search_depth = "advanced"
+
+    try:
+        client = TavilyClient(api_key=api_key)
+        response = client.search(
+            query=query,
+            search_depth=search_depth,
+            max_results=max_results,
+            include_answer=True,
+        )
+
+        parts = [f"Tavily search results for: {query}\n"]
+
+        # Include AI-generated answer if available
+        answer = response.get("answer")
+        if answer:
+            parts.append(f"**AI Summary:** {answer}\n")
+
+        results = response.get("results", [])
+        if not results:
+            return f"No Tavily results found for: {query}"
+
+        for i, r in enumerate(results, 1):
+            title = r.get("title", "No title")
+            url = r.get("url", "N/A")
+            content = r.get("content", "No content")
+            score = r.get("score", 0)
+            # Truncate long content
+            if len(content) > 500:
+                content = content[:500] + "..."
+            parts.append(
+                f"{i}. **{title}** (relevance: {score:.2f})\n"
+                f"   URL: {url}\n"
+                f"   {content}\n"
+            )
+
+        output = "\n".join(parts)
+        if len(output) > 12000:
+            output = output[:12000] + "\n\n[... truncated at 12000 chars]"
+        return output
+
+    except Exception as e:
+        return f"ERROR searching Tavily: {e}"
+
+
 # --- Dispatcher ---
 
 TOOL_HANDLERS = {
@@ -2746,6 +2861,7 @@ TOOL_HANDLERS = {
     "muse_search": lambda args: handle_muse_search(args.get("category", ""), args.get("level", "Senior Level"), args.get("location", ""), args.get("max_results", 10)),
     "remotive_search": lambda args: handle_remotive_search(args.get("query", ""), args.get("category", ""), args.get("max_results", 10)),
     "hunter_search": lambda args: handle_hunter_search(args["domain"], args.get("role", "management"), args.get("department", "product")),
+    "tavily_search": lambda args: handle_tavily_search(args["query"], args.get("search_depth", "advanced"), args.get("max_results", 5)),
 }
 
 

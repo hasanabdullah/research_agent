@@ -46,6 +46,7 @@ STATIC_DIR = ROOT / "static"
 # --- Running agent registry ---
 _running_agents: dict[str, dict] = {}
 _crashed_agents: set[str] = set()  # tracks agents that crashed until restarted
+_running_qe: dict[str, dict] = {}  # QE process registry
 
 
 # --- Models ---
@@ -103,6 +104,20 @@ class RedditConfig(BaseModel):
 
 class NewsApiConfig(BaseModel):
     api_key: str = ""
+
+
+class AdzunaConfig(BaseModel):
+    app_id: str = ""
+    app_key: str = ""
+
+
+class HunterConfig(BaseModel):
+    api_key: str = ""
+
+
+class TavilyConfig(BaseModel):
+    api_key: str = ""
+
 
 
 # --- Helpers ---
@@ -1219,6 +1234,29 @@ def api_health(name: str):
                             "cost_at": window[-1].get("cost_after"),
                         })
 
+    # --- Merge QE issues from issues.jsonl ---
+    qe_issues_file = ROOT / "topics" / name / "data" / "qe" / "issues.jsonl"
+    if qe_issues_file.exists():
+        try:
+            for line in qe_issues_file.read_text(encoding="utf-8").strip().split("\n"):
+                if not line:
+                    continue
+                entry = json.loads(line)
+                # Filter to current run
+                if started_at and entry.get("timestamp", "") < started_at:
+                    continue
+                issues.append({
+                    "type": entry.get("type", "qe_check"),
+                    "severity": entry.get("severity", "info") if entry.get("status") != "resolved" else "info",
+                    "message": entry.get("message", ""),
+                    "timestamp": entry.get("timestamp", ""),
+                    "cost_at": _nearest_cost(entry.get("timestamp", "")),
+                    "qe_run": entry.get("qe_run"),
+                    "status": entry.get("status", "open"),
+                })
+        except Exception:
+            pass
+
     # Sort by timestamp
     issues.sort(key=lambda x: x.get("timestamp", ""))
     return {"issues": issues, "has_issues": len(issues) > 0}
@@ -1260,6 +1298,9 @@ def api_start_agent(name: str, delay: int = 10):
     }
     _crashed_agents.discard(name)
 
+    # Auto-start QE if enabled
+    _maybe_start_qe(name)
+
     return {"started": name, "pid": proc.pid}
 
 
@@ -1288,7 +1329,92 @@ def api_stop_agent(name: str):
 
     del _running_agents[name]
     _crashed_agents.discard(name)
+
+    # Auto-stop QE
+    _maybe_stop_qe(name)
+
     return {"stopped": name}
+
+
+def _maybe_start_qe(name: str):
+    """Start QE subprocess if enabled in agent_config."""
+    if name in _running_qe:
+        qe_proc = _running_qe[name].get("process")
+        if qe_proc and qe_proc.poll() is None:
+            return  # already running
+
+    # Check if QE is enabled
+    agent_cfg_path = ROOT / "topics" / name / "agent_config.yaml"
+    qe_enabled = True  # default
+    qe_interval = 90
+    qe_threshold = 3
+    if agent_cfg_path.exists():
+        try:
+            acfg = yaml.safe_load(agent_cfg_path.read_text(encoding="utf-8")) or {}
+            qe_cfg = acfg.get("qe", {})
+            qe_enabled = qe_cfg.get("enabled", True)
+            qe_interval = qe_cfg.get("interval_seconds", 90)
+            qe_threshold = qe_cfg.get("cycle_threshold", 3)
+        except Exception:
+            pass
+
+    if not qe_enabled:
+        return
+
+    qe_log_dir = ROOT / "topics" / name / "data" / "qe"
+    qe_log_dir.mkdir(parents=True, exist_ok=True)
+    qe_log_path = qe_log_dir / "qe.log"
+    qe_log_file = open(qe_log_path, "a", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    qe_proc = subprocess.Popen(
+        [sys.executable, "-m", "agent", "run-qe", name,
+         "--interval", str(qe_interval), "--cycle-threshold", str(qe_threshold)],
+        cwd=str(ROOT),
+        env=env,
+        stdout=qe_log_file,
+        stderr=subprocess.STDOUT,
+    )
+    _running_qe[name] = {"process": qe_proc, "pid": qe_proc.pid, "log_file": qe_log_file}
+
+
+def _maybe_stop_qe(name: str):
+    """Stop QE subprocess if running."""
+    if name not in _running_qe:
+        return
+    entry = _running_qe[name]
+    proc = entry.get("process")
+    if proc and proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    if "log_file" in entry:
+        try:
+            entry["log_file"].close()
+        except Exception:
+            pass
+    del _running_qe[name]
+
+
+@app.get("/api/topics/{name}/qe-report")
+def api_qe_report(name: str):
+    """Return the latest QE report."""
+    _topic_dir(name)
+    qe_dir = ROOT / "topics" / name / "data" / "qe"
+    if not qe_dir.exists():
+        return {"report": None}
+    # Find latest report file
+    reports = sorted(qe_dir.glob("report_*.json"))
+    if not reports:
+        return {"report": None}
+    try:
+        return {"report": json.loads(reports[-1].read_text(encoding="utf-8"))}
+    except Exception:
+        return {"report": None}
 
 
 @app.get("/api/agents/status")
@@ -1359,6 +1485,21 @@ def api_agents_status():
                     "phase5_ran": phase5_ran,
                 }
 
+        # QE status
+        qe_running = False
+        qe_issues = 0
+        qe_entry = _running_qe.get(name)
+        if qe_entry:
+            qe_proc = qe_entry.get("process")
+            qe_running = qe_proc is not None and qe_proc.poll() is None
+        qe_reports = sorted((d / "data" / "qe").glob("report_*.json")) if (d / "data" / "qe").exists() else []
+        if qe_reports:
+            try:
+                latest = json.loads(qe_reports[-1].read_text(encoding="utf-8"))
+                qe_issues = latest.get("issue_count", 0)
+            except Exception:
+                pass
+
         result.append({
             "name": name,
             "running": running,
@@ -1369,6 +1510,8 @@ def api_agents_status():
             "budget": agent_budget,
             "checkpoint": checkpoint,
             "selection_checkpoint": selection_checkpoint,
+            "qe_running": qe_running,
+            "qe_issues": qe_issues,
         })
 
     return result
@@ -2503,6 +2646,192 @@ def api_put_newsapi_config(body: NewsApiConfig):
         "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
     }
     _save_newsapi_config(newsapi_cfg)
+    return {"status": "saved"}
+
+
+# ── Adzuna config ──────────────────────────────────────────────────────
+
+
+def _load_adzuna_config() -> dict:
+    """Load Adzuna config from config.yaml, falling back to env vars."""
+    cfg = load_config()
+    adzuna = cfg.get("adzuna", {}) or {}
+    app_id = adzuna.get("app_id", "") or os.environ.get("ADZUNA_APP_ID", "")
+    app_key = adzuna.get("app_key", "") or os.environ.get("ADZUNA_APP_KEY", "")
+    return {"app_id": app_id, "app_key": app_key}
+
+
+def _save_adzuna_config(adzuna_cfg: dict):
+    """Upsert the adzuna: block in config.yaml, preserving other content."""
+    cfg_path = ROOT / "config.yaml"
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+
+    lines = ["adzuna:"]
+    for key in ("app_id", "app_key"):
+        val = adzuna_cfg.get(key, "")
+        lines.append(f'  {key}: "{val}"')
+    snippet = "\n".join(lines)
+
+    if re.search(r"^adzuna:\s*\r?$", text, re.MULTILINE):
+        text = re.sub(
+            r"^adzuna:\s*\r?\n(?:[ \t]+\S.*\r?\n?)*",
+            snippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + snippet + "\n"
+
+    cfg_path.write_text(text, encoding="utf-8")
+
+
+@app.get("/api/adzuna/config")
+def api_get_adzuna_config():
+    """Return Adzuna config with masked keys + configured flag."""
+    cfg = _load_adzuna_config()
+    app_id = cfg.get("app_id", "")
+    app_key = cfg.get("app_key", "")
+    id_masked = ""
+    key_masked = ""
+    if app_id:
+        id_masked = app_id[:4] + "..." + app_id[-4:] if len(app_id) > 8 else "***"
+    if app_key:
+        key_masked = app_key[:4] + "..." + app_key[-4:] if len(app_key) > 8 else "***"
+    return {
+        "app_id_masked": id_masked,
+        "app_key_masked": key_masked,
+        "configured": bool(app_id and app_key),
+    }
+
+
+@app.put("/api/adzuna/config")
+def api_put_adzuna_config(body: AdzunaConfig):
+    """Save Adzuna app_id and app_key to config.yaml."""
+    existing = _load_adzuna_config()
+    adzuna_cfg = {
+        "app_id": body.app_id if body.app_id else existing.get("app_id", ""),
+        "app_key": body.app_key if body.app_key else existing.get("app_key", ""),
+    }
+    _save_adzuna_config(adzuna_cfg)
+    return {"status": "saved"}
+
+
+# ── Hunter.io config ──────────────────────────────────────────────────
+
+
+def _load_hunter_config() -> dict:
+    """Load Hunter config from config.yaml, falling back to env vars."""
+    cfg = load_config()
+    hunter = cfg.get("hunter", {}) or {}
+    api_key = hunter.get("api_key", "") or os.environ.get("HUNTER_API_KEY", "")
+    return {"api_key": api_key}
+
+
+def _save_hunter_config(hunter_cfg: dict):
+    """Upsert the hunter: block in config.yaml, preserving other content."""
+    cfg_path = ROOT / "config.yaml"
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+
+    lines = ["hunter:"]
+    for key in ("api_key",):
+        val = hunter_cfg.get(key, "")
+        lines.append(f'  {key}: "{val}"')
+    snippet = "\n".join(lines)
+
+    if re.search(r"^hunter:\s*\r?$", text, re.MULTILINE):
+        text = re.sub(
+            r"^hunter:\s*\r?\n(?:[ \t]+\S.*\r?\n?)*",
+            snippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + snippet + "\n"
+
+    cfg_path.write_text(text, encoding="utf-8")
+
+
+@app.get("/api/hunter/config")
+def api_get_hunter_config():
+    """Return Hunter config with masked api_key + configured flag."""
+    cfg = _load_hunter_config()
+    api_key = cfg.get("api_key", "")
+    masked = ""
+    if api_key:
+        masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+    return {
+        "api_key_masked": masked,
+        "configured": bool(api_key),
+    }
+
+
+@app.put("/api/hunter/config")
+def api_put_hunter_config(body: HunterConfig):
+    """Save Hunter api_key to config.yaml."""
+    existing = _load_hunter_config()
+    hunter_cfg = {
+        "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
+    }
+    _save_hunter_config(hunter_cfg)
+    return {"status": "saved"}
+
+
+# --- Tavily config ---
+
+def _load_tavily_config() -> dict:
+    """Load Tavily config from config.yaml, falling back to env vars."""
+    cfg = load_config()
+    tavily = cfg.get("tavily", {}) or {}
+    api_key = tavily.get("api_key", "") or os.environ.get("TAVILY_API_KEY", "")
+    return {"api_key": api_key}
+
+
+def _save_tavily_config(tavily_cfg: dict):
+    """Upsert the tavily: block in config.yaml, preserving other content."""
+    cfg_path = ROOT / "config.yaml"
+    text = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
+
+    lines = ["tavily:"]
+    for key in ("api_key",):
+        val = tavily_cfg.get(key, "")
+        lines.append(f'  {key}: "{val}"')
+    snippet = "\n".join(lines)
+
+    if re.search(r"^tavily:\s*\r?$", text, re.MULTILINE):
+        text = re.sub(
+            r"^tavily:\s*\r?\n(?:[ \t]+\S.*\r?\n?)*",
+            snippet + "\n",
+            text,
+            flags=re.MULTILINE,
+        )
+    else:
+        text = text.rstrip() + "\n\n" + snippet + "\n"
+
+    cfg_path.write_text(text, encoding="utf-8")
+
+
+@app.get("/api/tavily/config")
+def api_get_tavily_config():
+    """Return Tavily config with masked api_key + configured flag."""
+    cfg = _load_tavily_config()
+    api_key = cfg.get("api_key", "")
+    masked = ""
+    if api_key:
+        masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+    return {
+        "api_key_masked": masked,
+        "configured": bool(api_key),
+    }
+
+
+@app.put("/api/tavily/config")
+def api_put_tavily_config(body: TavilyConfig):
+    """Save Tavily api_key to config.yaml."""
+    existing = _load_tavily_config()
+    tavily_cfg = {
+        "api_key": body.api_key if body.api_key else existing.get("api_key", ""),
+    }
+    _save_tavily_config(tavily_cfg)
     return {"status": "saved"}
 
 

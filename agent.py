@@ -244,6 +244,7 @@ def resolve_topic_paths(config: dict) -> dict:
             "costs_file": base / "data" / "costs.json",
             "cycles_file": base / "data" / "cycles.jsonl",
             "patches_dir": base / "data" / "pending_patches",
+            "qe_dir": base / "data" / "qe",
         }
     # Legacy fallback — no active_topic set
     return {
@@ -256,6 +257,7 @@ def resolve_topic_paths(config: dict) -> dict:
         "costs_file": ROOT / "data" / "costs.json",
         "cycles_file": ROOT / "data" / "cycles.jsonl",
         "patches_dir": ROOT / "data" / "pending_patches",
+        "qe_dir": ROOT / "data" / "qe",
     }
 
 
@@ -649,6 +651,21 @@ def _extract_phase_directive(phase_guidance: str) -> str:
     return "## PHASE DIRECTIVE (HIGHEST PRIORITY)\n" + "\n".join(directives) + "\n"
 
 
+def _build_qe_section(paths: dict) -> str:
+    """Read QE feedback file and return a context section if it exists."""
+    if not paths:
+        return ""
+    feedback_path = paths["data_dir"] / "quality_feedback.md"
+    if feedback_path.exists():
+        try:
+            qe_text = feedback_path.read_text(encoding="utf-8").strip()
+            if qe_text:
+                return f"## Quality Engineer Feedback\n{qe_text}\n\n"
+        except Exception:
+            pass
+    return ""
+
+
 def build_context(identity: dict, config: dict, paths: dict = None) -> str:
     """Build the context string the agent sees at the start of each cycle."""
     cycle_num = get_cycle_count(paths) + 1
@@ -681,7 +698,8 @@ def build_context(identity: dict, config: dict, paths: dict = None) -> str:
         f"## Your research files\n{research_files}\n\n"
         f"## Recent git history\n{git_history}\n\n"
         f"## Recent cycles\n{recent_text}\n"
-        f"## Instructions\n"
+        + _build_qe_section(paths)
+        + f"## Instructions\n"
         f"You may read your own source files and research files, then either:\n"
         f"1. Call `propose_edit` to CREATE a new research file under data/research/*.md\n"
         f"2. Call `append_to_file` to ADD content to an existing research file (preferred for growing docs)\n"
@@ -2116,6 +2134,20 @@ def run_topic(topic_name, cycles, delay):
                 break
 
         time.sleep(delay)
+
+
+@cli.command("run-qe")
+@click.argument("topic_name")
+@click.option("--interval", default=90, help="Seconds between checks")
+@click.option("--cycle-threshold", default=3, help="Min new cycles before running")
+def run_qe_cmd(topic_name, interval, cycle_threshold):
+    """Run quality engineer monitor for a topic."""
+    topic_dir = ROOT / "topics" / topic_name
+    if not topic_dir.exists():
+        click.echo(f"Topic '{topic_name}' not found.")
+        return
+    from qe import run_qe_loop
+    run_qe_loop(topic_name, interval, cycle_threshold)
 
 
 if __name__ == "__main__":

@@ -1242,9 +1242,7 @@ def api_health(name: str):
                 if not line:
                     continue
                 entry = json.loads(line)
-                # Filter to current run
-                if started_at and entry.get("timestamp", "") < started_at:
-                    continue
+                # QE issues are not filtered by started_at — they span agent restarts
                 issues.append({
                     "type": entry.get("type", "qe_check"),
                     "severity": entry.get("severity", "info") if entry.get("status") != "resolved" else "info",
